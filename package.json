@@ -3,10 +3,11 @@
   "name": "hisobchi-finance-mini-app",
   "version": "1.0.0",
   "private": true,
+  
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "concurrently -k -n WEB,BOT \"npm: start:web\" \"npm: bot\"",
+    "start": "concurrently -k -n WEB,BOT \"npm run start:web\" \"npm run bot\"",
     "start:web": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
