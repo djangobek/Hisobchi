@@ -25,16 +25,16 @@ export const viewport: Viewport = {
   themeColor: "#050816",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="uz" className={inter.variable}>
-      <head>
+      <body>
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
-      </head>
-      <body>
         <I18nProvider>
           <MaintenanceBanner />
           {children}

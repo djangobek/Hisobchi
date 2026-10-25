@@ -112,7 +112,7 @@ async function setMenuButton(lang: Lang, chatId?: number) {
 async function setProfile() {
   try {
     for (const lang of ["uz", "ru"] as const) {
-      const opts = lang === "ru" ? ({ language_code: "ru" } as const) : undefined;
+      const opts = lang === "ru" ? { language_code: "ru" } : {};
       await bot.api.setMyDescription(tx(lang, "description"), opts);
       await bot.api.setMyShortDescription(tx(lang, "shortDesc"), opts);
     }
