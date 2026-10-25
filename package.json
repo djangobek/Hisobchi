@@ -39,7 +39,8 @@
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
     "prisma": "^6.19.0",
-    "@eslint/eslintrc": "^3.3.6"
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "^4.1.0"
   },
   "engines": {
     "node": ">=22 <23"
