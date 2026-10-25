@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hisobchi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hisobchi_dev_password}
+      POSTGRES_DB: hisobchi
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - hisobchi_pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hisobchi -d hisobchi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  hisobchi_pgdata:

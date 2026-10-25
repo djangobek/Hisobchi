@@ -1,0 +1,6 @@
+{
+  "name":"hisobchi-finance-mini-app","version":"1.0.0","private":true,
+  "scripts":{"dev":"next dev","build":"next build","start":"next start","lint":"eslint .","typecheck":"tsc --noEmit","test":"vitest run","bot":"tsx bot/index.ts","db:generate":"prisma generate","db:migrate":"prisma migrate dev","db:seed":"tsx prisma/seed.ts"},
+  "dependencies":{"@prisma/client":"^6.19.0","@hookform/resolvers":"^5.2.2","date-fns":"^4.1.0","grammy":"^1.38.3","lucide-react":"^0.468.0","next":"^15.5.6","react":"^19.1.1","react-dom":"^19.1.1","react-hook-form":"^7.62.0","recharts":"^2.15.4","zod":"^4.1.5"},
+  "devDependencies":{"@tailwindcss/postcss":"^4.1.14","@types/node":"^22.18.6","@types/react":"^19.1.16","@types/react-dom":"^19.1.9","eslint":"^9.37.0","eslint-config-next":"^15.5.6","tailwindcss":"^4.1.14","tsx":"^4.20.6","typescript":"^5.9.3","vitest":"^3.2.4","prisma":"^6.19.0"}
+}

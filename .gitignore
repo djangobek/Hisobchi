@@ -1,0 +1,48 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# production / build
+build/
+dist/
+*.tsbuildinfo
+
+# env (maxfiy kalitlar — hech qachon commit qilinmaydi)
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# testing
+coverage/
+
+# database backups & dumps (prisma migratsiyalari saqlanadi)
+backups/
+*.sql.gz
+*.sql
+!prisma/migrations/**/*.sql
+*.dump
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# misc
+.vercel
+*.pem

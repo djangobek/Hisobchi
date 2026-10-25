@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum DebtDirection {
+  LENT
+  BORROWED
+}
+
+enum DebtStatus {
+  OPEN
+  PARTIAL
+  PAID
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum BroadcastStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  telegramId   String   @unique
+  firstName    String?
+  lastName     String?
+  username     String?
+  language     String   @default("uz")
+  timezone     String   @default("Asia/Tashkent")
+  role         UserRole @default(USER)
+  isBlocked    Boolean  @default(false)
+  blockedBot   Boolean  @default(false)
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  categories    Category[]
+  transactions  Transaction[]
+  debts         Debt[]
+  accounts      Account[]
+  broadcastLogs BroadcastLog[]
+  aiConversations AiConversation[]
+  aiMemory      AiMemory?
+  aiGoals       AiGoal[]
+
+  @@index([role])
+  @@index([lastActiveAt])
+  @@index([createdAt])
+}
+
+model Category {
+  id        String          @id @default(cuid())
+  userId    String
+  name      String
+  type      TransactionType
+  color     String          @default("#64748b")
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name, type])
+  @@index([userId, type])
+}
+
+model Account {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  openingBalance Decimal  @default(0) @db.Decimal(18, 2)
+  currency       String   @default("UZS")
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Transaction {
+  id         String          @id @default(cuid())
+  userId     String
+  amount     Decimal         @db.Decimal(18, 2)
+  type       TransactionType
+  categoryId String
+  accountId  String?
+  note       String?
+  occurredAt DateTime
+  requestKey String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  account    Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, requestKey])
+  @@index([userId, occurredAt])
+  @@index([userId, type, occurredAt])
+  @@index([categoryId])
+  @@index([occurredAt])
+}
+
+model Debt {
+  id             String        @id @default(cuid())
+  userId         String
+  personName     String
+  direction      DebtDirection
+  originalAmount Decimal       @db.Decimal(18, 2)
+  occurredAt     DateTime
+  dueAt          DateTime?
+  note           String?
+  status         DebtStatus    @default(OPEN)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments       DebtPayment[]
+
+  @@index([userId, direction, status])
+}
+
+model DebtPayment {
+  id        String   @id @default(cuid())
+  debtId    String
+  amount    Decimal  @db.Decimal(18, 2)
+  paidAt    DateTime
+  note      String?
+  createdAt DateTime @default(now())
+  debt      Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@index([debtId, paidAt])
+}
+
+model Broadcast {
+  id          String          @id @default(cuid())
+  message     String
+  buttonText  String?
+  buttonUrl   String?
+  segment     String          @default("all")
+  totalSent   Int             @default(0)
+  totalFailed Int             @default(0)
+  createdBy   String
+  createdAt   DateTime        @default(now())
+  logs        BroadcastLog[]
+}
+
+model BroadcastLog {
+  id          String          @id @default(cuid())
+  broadcastId String
+  userId      String
+  status      BroadcastStatus @default(PENDING)
+  error       String?
+  sentAt      DateTime?
+  broadcast   Broadcast       @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([broadcastId])
+  @@index([userId])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AdminAction {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  target    String?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([adminId, createdAt])
+}
+
+/// Texnologiya #4: Postgres'da saqlanadigan statistika "snapshot" (rollup).
+/// Og'ir hisob bir necha daqiqada bir marta bajariladi, server qayta ishga tushsa ham yo'qolmaydi.
+model AdminStatsSnapshot {
+  key        String   @id
+  payload    Json
+  computedAt DateTime @default(now())
+}
+
+
+model AiConversation {
+  id        String      @id @default(cuid())
+  userId    String
+  title     String      @default("Moliyaviy maslahat")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  role           String
+  content        String         @db.Text
+  provider       String?
+  createdAt      DateTime       @default(now())
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model AiMemory {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  enabled   Boolean  @default(false)
+  content   String   @default("") @db.Text
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+
+model AiGoal {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String
+  targetAmount  Decimal  @db.Decimal(18, 2)
+  currentAmount Decimal  @default(0) @db.Decimal(18, 2)
+  targetDate    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, targetDate])
+}

@@ -1,0 +1,3 @@
+# Install with: crontab -e
+# Run daily at 02:00 server local time. Change /opt/hisobchi to the actual project path.
+0 2 * * * cd /opt/hisobchi && /bin/bash scripts/backup-postgres.sh >> backups/backup.log 2>&1
