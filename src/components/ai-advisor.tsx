@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n-client";
 import { localeOf, type Lang } from "@/lib/i18n";
-import { BrainCircuit, Send, Sparkles, Trash2, ShieldCheck, Target, Save, Loader2, MessageCircle, Brain, Copy, Check, BarChart3, HandCoins, HeartPulse, AlertTriangle, SlidersHorizontal, Wallet, Share2 } from "lucide-react";
+import { ArrowLeft, ArrowUp, Mic, Plus, X, Sparkles, Trash2, ShieldCheck, Target, Save, Loader2, MessageCircle, Brain, Copy, Check, BarChart3, HandCoins, HeartPulse, AlertTriangle, SlidersHorizontal, Wallet, Share2 } from "lucide-react";
 
 type Message = { id?: string; role: "user" | "assistant"; content: string; provider?: string | null; createdAt?: string };
 type Memory = { enabled: boolean; content: string; updatedAt?: string };
@@ -83,9 +83,51 @@ function RichText({ text }: { text: string }) {
   return <>{blocks}</>;
 }
 
+/** Robot-yordamchi: SVG, holatga qarab ko'z qisadi / "o'ylaydi". Tashqi rasm kerak emas, har qanday o'lchamda aniq. */
+export function AiBot({ size = 120, state = "idle" }: { size?: number; state?: "idle" | "thinking" }) {
+  const id = useRef(`b${Math.random().toString(36).slice(2, 8)}`).current;
+  return <svg className={`aiv-bot ${state}`} viewBox="0 0 200 200" width={size} height={size} role="img" aria-label="Hisobchi AI">
+    <defs>
+      <radialGradient id={`${id}s`} cx="38%" cy="28%" r="80%"><stop offset="0" stopColor="#ffffff"/><stop offset=".62" stopColor="#e6ebf7"/><stop offset="1" stopColor="#b9c4e0"/></radialGradient>
+      <linearGradient id={`${id}v`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#141a3d"/><stop offset="1" stopColor="#04061a"/></linearGradient>
+      <radialGradient id={`${id}e`}><stop offset="0" stopColor="#fff"/><stop offset=".55" stopColor="#bfdbfe"/><stop offset="1" stopColor="#60a5fa"/></radialGradient>
+      <filter id={`${id}g`} x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>
+    </defs>
+    <ellipse cx="100" cy="186" rx="52" ry="7" fill="#3b82f6" opacity=".22" className="aiv-bot-shadow"/>
+    <g className="aiv-bot-body">
+      <path d="M38 104 C38 40 70 18 100 18 C130 18 162 40 162 104" fill="none" stroke={`url(#${id}s)`} strokeWidth="9" strokeLinecap="round"/>
+      <rect x="22" y="84" width="24" height="50" rx="12" fill={`url(#${id}s)`}/><rect x="40" y="92" width="7" height="34" rx="3.5" fill="#0b0f2a"/>
+      <rect x="154" y="84" width="24" height="50" rx="12" fill={`url(#${id}s)`}/><rect x="153" y="92" width="7" height="34" rx="3.5" fill="#0b0f2a"/>
+      <path d="M170 128 C170 150 160 158 140 160" fill="none" stroke="#2a3158" strokeWidth="4" strokeLinecap="round"/><rect x="124" y="156" width="20" height="9" rx="4.5" fill="#0b0f2a"/>
+      <ellipse cx="100" cy="100" rx="62" ry="56" fill={`url(#${id}s)`}/>
+      <rect x="50" y="68" width="100" height="62" rx="30" fill={`url(#${id}v)`}/>
+      <path d="M62 78 Q100 66 138 78" fill="none" stroke="#fff" strokeOpacity=".12" strokeWidth="3" strokeLinecap="round"/>
+      <g className="aiv-eyes">
+        <g filter={`url(#${id}g)`} opacity=".9"><circle cx="78" cy="98" r="9" fill="#60a5fa"/><circle cx="122" cy="98" r="9" fill="#60a5fa"/></g>
+        <circle className="aiv-eye" cx="78" cy="98" r="8" fill={`url(#${id}e)`}/><circle className="aiv-eye" cx="122" cy="98" r="8" fill={`url(#${id}e)`}/>
+      </g>
+      <path className="aiv-smile" d="M90 113 Q100 121 110 113" fill="none" stroke="#bfdbfe" strokeWidth="3.4" strokeLinecap="round"/>
+      <g className="aiv-dots"><circle cx="88" cy="115" r="2.6" fill="#bfdbfe"/><circle cx="100" cy="115" r="2.6" fill="#bfdbfe"/><circle cx="112" cy="115" r="2.6" fill="#bfdbfe"/></g>
+    </g>
+  </svg>;
+}
+
+type SR = { start: () => void; stop: () => void; lang: string; interimResults: boolean; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+type TgWebApp = {
+  initDataUnsafe?: { user?: { first_name?: string } };
+  expand?: () => void; ready?: () => void; disableVerticalSwipes?: () => void; enableVerticalSwipes?: () => void;
+  requestFullscreen?: () => void; exitFullscreen?: () => void; isFullscreen?: boolean; isVersionAtLeast?: (v: string) => boolean;
+  setHeaderColor?: (c: string) => void; setBackgroundColor?: (c: string) => void; setBottomBarColor?: (c: string) => void;
+  BackButton?: { show: () => void; hide: () => void; onClick: (f: () => void) => void; offClick: (f: () => void) => void };
+  HapticFeedback?: { impactOccurred?: (s: string) => void };
+};
+const tgApp = () => (window as Window & { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+/** Telegram'da ham to'liq ekran (Bot API 8.0+). Kerak bo'lmasa false qiling — baribir butun ekranni egallaydi, faqat Telegram sarlavhasi qoladi. */
+const TG_FULLSCREEN = true;
+
 function initData() { return (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData ?? ""; }
 
-export default function AiAdvisor() {
+export default function AiAdvisor({ onClose }: { onClose?: () => void }) {
   const { t: tr, lang } = useI18n();
   const nf = (n: number) => new Intl.NumberFormat(localeOf(lang)).format(n);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -208,40 +250,124 @@ export default function AiAdvisor() {
   const askChip = (prompt: string) => { setTab("chat"); void send(undefined, prompt); };
   const memoryLabel = tr(memory.enabled ? "Yoqilgan" : "O'chirilgan");
 
-  return <section className="ai-page page-stack">
-    <div className="ai-hero">
-      <div className="ai-hero-icon"><BrainCircuit size={25}/></div>
-      <div className="ai-hero-copy"><div className="eyebrow">{tr("SHAXSIY MOLIYAVIY YORDAMCHI")}</div><h2>{tr("Hisobchi AI")}</h2><p>{tr("Qisqa, aniq va sizning raqamlaringizga asoslangan maslahat.")}</p></div>
-      <button className="ai-icon-button" title={tr("Suhbat tarixini tozalash")} onClick={() => void clearHistory()}><Trash2 size={17}/></button>
-    </div>
-    {!configured && <div className="ai-alert">{tr("AI provayderlari sozlanmagan. Serverning")} <code>.env</code> {tr("fayliga GEMINI_API_KEY yoki GROQ_API_KEY qo'shing.")}</div>}
-    {error && <div className="ai-alert" role="alert">{errText(error)}</div>}
 
-    <div className="ai-tabs" role="tablist">
-      {([["chat", MessageCircle, tr("Maslahat")], ["stats", BarChart3, tr("Tahlil")], ["debts", HandCoins, tr("Qarzlar")], ["goals", Target, tr("Maqsad")], ["memory", Brain, tr("Xotira")]] as const).map(([id, Icon, label]) =>
-        <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17}/><span>{label}</span></button>)}
-    </div>
+  /* ---------- to'liq ekran: viewport, klaviatura, Telegram, orqaga ---------- */
+  // onClose har renderda yangi funksiya bo'lishi mumkin — effektlar qayta ishga tushmasligi uchun ref orqali
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  const close = useCallback(() => { tgApp()?.HapticFeedback?.impactOccurred?.("light"); onCloseRef.current?.(); }, []);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [speechOk, setSpeechOk] = useState(false);
+  const recRef = useRef<SR | null>(null);
+  const [firstName, setFirstName] = useState("");
 
-    {tab === "chat" && <>
-      {loading && <div className="ai-insights"><div className="ai-insight-skeleton"/></div>}
-      {!loading && insights.length > 0 && <div className="ai-insights">
-        <div className="ai-section-label">{tr("Tezkor xulosa")} <span>{tr("AI'siz, bepul")}</span></div>
-        <div className="ai-insight-row">{insights.map(i => <div key={i.id} className={`ai-insight ${i.tone}`}><strong>{i.title}</strong><p>{i.text}</p></div>)}</div>
-      </div>}
-      <div className="ai-chat-card">
-        <div className="ai-messages" ref={messagesRef}>
-          {loading ? <div className="ai-empty"><Loader2 className="ai-spin" size={24}/><p>{tr("Yuklanmoqda...")}</p></div> : messages.length === 0 ? <div className="ai-empty"><div className="ai-empty-icon"><Sparkles size={24}/></div><strong>{tr("Nimani bilmoqchisiz?")}</strong><p>{tr("Pastdagi tayyor savollardan birini bosing yoki o'zingiz yozing.")}</p></div> : messages.map((m, i) => <div key={m.id || `${i}-${m.role}`} className={`ai-message ${m.role === "user" ? "user" : "assistant"}`}>
-            <div className="ai-message-content">{m.role === "assistant" ? <RichText text={m.content}/> : m.content}</div>
-            {m.role === "assistant" && <div className="ai-message-foot"><span>{m.provider === "gemini" ? "Gemini" : m.provider === "groq" ? "Groq" : ""}</span><button onClick={() => void copyMessage(m.content, i)} aria-label={tr("Nusxalash")}>{copiedIdx === i ? <Check size={13}/> : <Copy size={13}/>}</button></div>}
-          </div>)}
-          {busy && <div className="ai-message assistant ai-thinking"><span/><span/><span/></div>}<div ref={bottomRef}/>
-        </div>
-        <div className="ai-chip-row">{CHIPS.map(c => <button key={c.label.uz} disabled={busy || loading} onClick={() => askChip(c.prompt[lang])}><span>{c.emoji}</span>{c.label[lang]}</button>)}
-          <button disabled={busy || loading} onClick={() => setInput(v => v || (lang === "ru" ? "Если мои ежемесячные расходы сократятся на ... сум, " : "Agar oylik xarajatim ... so'mga kamaysa, "))}><span>🧪</span>{tr("Agar... bo'lsa?")}</button></div>
-        <form className="ai-compose" onSubmit={e => void send(e)}><textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} placeholder={tr("Savolingizni yozing...")} rows={1} maxLength={1500} disabled={busy || loading} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(pointer:fine)").matches) { e.preventDefault(); void send(); } }}/><button type="submit" disabled={!input.trim() || busy || loading} aria-label={tr("Xabar yuborish")}><Send size={18}/></button></form>
+  useEffect(() => {
+    // Sahifa orqasidagi kontent siljimasin, iOS'da klaviatura ochilganda panel ko'tarilsin
+    const root = document.documentElement; const vv = window.visualViewport;
+    const setH = () => { root.style.setProperty("--aiv-h", `${Math.round(vv?.height ?? window.innerHeight)}px`); window.scrollTo(0, 0); };
+    setH(); vv?.addEventListener("resize", setH); vv?.addEventListener("scroll", setH); window.addEventListener("orientationchange", setH);
+    const prevOverflow = document.body.style.overflow; document.body.style.overflow = "hidden"; document.body.classList.add("aiv-open");
+    const tg = tgApp(); const bg = "#050816";
+    try {
+      tg?.expand?.(); tg?.disableVerticalSwipes?.(); tg?.setHeaderColor?.(bg); tg?.setBackgroundColor?.(bg); tg?.setBottomBarColor?.(bg);
+      if (TG_FULLSCREEN && tg?.isVersionAtLeast?.("8.0") && !tg.isFullscreen) tg.requestFullscreen?.();
+      tg?.BackButton?.show(); tg?.BackButton?.onClick(close);
+    } catch { /* eski Telegram versiyasi */ }
+    setFirstName(tg?.initDataUnsafe?.user?.first_name ?? "");
+    const SRc = (window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR });
+    setSpeechOk(Boolean(SRc.SpeechRecognition || SRc.webkitSpeechRecognition));
+    return () => {
+      vv?.removeEventListener("resize", setH); vv?.removeEventListener("scroll", setH); window.removeEventListener("orientationchange", setH);
+      root.style.removeProperty("--aiv-h"); document.body.style.overflow = prevOverflow; document.body.classList.remove("aiv-open");
+      try { tg?.BackButton?.offClick(close); tg?.BackButton?.hide(); tg?.enableVerticalSwipes?.(); if (tg?.isFullscreen) tg.exitFullscreen?.(); } catch { /* */ }
+      recRef.current?.stop();
+    };
+  }, [close]);
+
+  useEffect(() => { // Android "orqaga" tugmasi / Esc
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { if (sheet || menuOpen) { setSheet(false); setMenuOpen(false); } else close(); } };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, [close, sheet, menuOpen]);
+
+  function toggleMic() {
+    if (listening) { recRef.current?.stop(); return; }
+    const w = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition; if (!Ctor) return;
+    const rec = new Ctor(); rec.lang = lang === "ru" ? "ru-RU" : "uz-UZ"; rec.interimResults = false;
+    rec.onresult = e => { const text = Array.from(e.results).map(r => r[0].transcript).join(" ").trim(); if (text) setInput(v => (v ? `${v} ` : "") + text); };
+    rec.onend = () => setListening(false); rec.onerror = () => setListening(false);
+    recRef.current = rec; setListening(true); try { rec.start(); } catch { setListening(false); }
+  }
+
+  const hour = new Date().getHours();
+  const greet = hour < 5 ? tr("Xayrli tun") : hour < 12 ? tr("Xayrli tong") : hour < 18 ? tr("Xayrli kun") : tr("Xayrli kech");
+  const tabs = [["chat", MessageCircle, tr("Maslahat")], ["stats", BarChart3, tr("Tahlil")], ["debts", HandCoins, tr("Qarzlar")], ["goals", Target, tr("Maqsad")], ["memory", Brain, tr("Xotira")]] as const;
+  const empty = !loading && messages.length === 0;
+  const pick = (c: typeof CHIPS[number]) => { setSheet(false); askChip(c.prompt[lang]); };
+
+  return <section className="aiv" role="dialog" aria-modal="true" aria-label={tr("Hisobchi AI")}>
+    <div className="aiv-glow" aria-hidden/>
+    <header className="aiv-top">
+      <button className="aiv-round" onClick={close} aria-label={tr("Asosiy menyuga qaytish")}><ArrowLeft size={20}/></button>
+      <button className="aiv-pill" onClick={() => setTab("chat")}><span className="aiv-pill-dot"/>{tr("Hisobchi AI")}<small>{tr("Moliyaviy yordamchi")}</small></button>
+      <div className="aiv-menu-wrap">
+        <button className="aiv-round" onClick={() => setMenuOpen(v => !v)} aria-label={tr("Menyu")} aria-expanded={menuOpen}>{menuOpen ? <X size={19}/> : <span className="aiv-dots-icon"><i/><i/><i/></span>}</button>
+        {menuOpen && <><div className="aiv-scrim" onClick={() => setMenuOpen(false)}/><div className="aiv-popover" role="menu">
+          <button role="menuitem" onClick={() => { setMenuOpen(false); setTab("memory"); }}><Brain size={16}/>{tr("Xotira")}</button>
+          <button role="menuitem" onClick={() => { setMenuOpen(false); setTab("goals"); }}><Target size={16}/>{tr("Maqsad")}</button>
+          <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); void clearHistory(); }}><Trash2 size={16}/>{tr("Suhbat tarixini tozalash")}</button>
+        </div></>}
       </div>
-    </>}
+    </header>
 
+    <nav className="aiv-tabs" role="tablist">
+      {tabs.map(([id, Icon, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={15}/>{label}</button>)}
+    </nav>
+
+    {!configured && <div className="ai-alert aiv-alert">{tr("AI provayderlari sozlanmagan. Serverning")} <code>.env</code> {tr("fayliga GEMINI_API_KEY yoki GROQ_API_KEY qo'shing.")}</div>}
+    {error && <div className="ai-alert aiv-alert" role="alert">{errText(error)}<button onClick={() => setError("")} aria-label="OK"><X size={14}/></button></div>}
+
+    {tab === "chat" ? <>
+      <div className="aiv-scroll" ref={messagesRef}>
+        {loading ? <div className="aiv-hero"><AiBot size={96} state="thinking"/><p className="aiv-muted">{tr("Yuklanmoqda...")}</p></div>
+        : empty ? <div className="aiv-hero">
+          <AiBot size={132}/>
+          <h1>{greet}{firstName ? `, ${firstName}` : ""}</h1>
+          <p>{tr("Pulingiz qayerga ketayotganini birga tahlil qilamiz.")}</p>
+          {insights.length > 0 && <div className="aiv-insights">{insights.slice(0, 3).map(i => <div key={i.id} className={`aiv-insight ${i.tone}`}><strong>{i.title}</strong><span>{i.text}</span></div>)}</div>}
+          <div className="aiv-suggest">{CHIPS.slice(0, 4).map(c => <button key={c.label.uz} disabled={busy} onClick={() => pick(c)}><span>{c.emoji}</span><b>{c.label[lang]}</b></button>)}</div>
+        </div>
+        : <div className="aiv-thread">
+          {messages.map((m, i) => m.role === "user"
+            ? <div key={m.id || `${i}-u`} className="aiv-msg user"><div className="aiv-bubble">{m.content}</div></div>
+            : <div key={m.id || `${i}-a`} className="aiv-msg assistant">
+              <div className="aiv-avatar"><AiBot size={34}/></div>
+              <div className="aiv-reply"><div className="aiv-text"><RichText text={m.content}/></div>
+                <div className="aiv-actions"><button onClick={() => void copyMessage(m.content, i)} aria-label={tr("Nusxalash")}>{copiedIdx === i ? <Check size={14}/> : <Copy size={14}/>}</button><span>{m.provider === "gemini" ? "Gemini" : m.provider === "groq" ? "Groq" : ""}</span></div></div>
+            </div>)}
+          {busy && <div className="aiv-msg assistant"><div className="aiv-avatar"><AiBot size={34} state="thinking"/></div><div className="aiv-reply"><div className="aiv-typing"><span/><span/><span/></div></div></div>}
+        </div>}
+        <div ref={bottomRef}/>
+      </div>
+
+      <div className="aiv-dock">
+        {!empty && !loading && <div className="aiv-chips">{CHIPS.map(c => <button key={c.label.uz} disabled={busy} onClick={() => pick(c)}><span>{c.emoji}</span>{c.label[lang]}</button>)}</div>}
+        <form className="aiv-composer" onSubmit={e => void send(e)}>
+          <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} placeholder={listening ? tr("Eshitilmoqda...") : tr("Savolingizni yozing...")} rows={1} maxLength={1500} disabled={busy || loading} enterKeyHint="send"
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(pointer:fine)").matches) { e.preventDefault(); void send(); } }}/>
+          <div className="aiv-composer-row">
+            <button type="button" className="aiv-tool" onClick={() => setSheet(true)} aria-label={tr("Tezkor savollar")}><Plus size={20}/></button>
+            <button type="button" className="aiv-tool aiv-model" onClick={() => setSheet(true)}><Sparkles size={14}/>{tr("Moliya rejimi")}</button>
+            <span className="aiv-grow"/>
+            {speechOk && <button type="button" className={`aiv-tool ${listening ? "rec" : ""}`} onClick={toggleMic} aria-label={tr("Ovozli kiritish")}><Mic size={19}/></button>}
+            <button type="submit" className="aiv-send" disabled={!input.trim() || busy || loading} aria-label={tr("Xabar yuborish")}>{busy ? <Loader2 size={18} className="ai-spin"/> : <ArrowUp size={20} strokeWidth={2.6}/>}</button>
+          </div>
+        </form>
+        <p className="aiv-disclaimer">{tr("AI xato qilishi mumkin. Muhim qarorlarni tekshirib oling.")}</p>
+      </div>
+    </> : <div className="aiv-scroll aiv-sub"><div className="ai-page page-stack">
     {tab === "stats" && <>
       {!analytics ? <div className="ai-empty"><Loader2 className="ai-spin" size={22}/><p>{tr("Yuklanmoqda...")}</p></div> : <>
         <div className="ai-card">
@@ -312,5 +438,12 @@ export default function AiAdvisor() {
       <div className="ai-memory-top"><span className="ai-memory-icon"><ShieldCheck size={18}/></span><div className="ai-memory-copy"><strong>{tr("Shaxsiy xotira")} · {memoryLabel}</strong><p>{tr("AI sizning maqsad va afzalliklaringizni har suhbatda hisobga oladi. Faqat siz yozganingiz ishlatiladi.")}</p></div></div>
       <div className="ai-memory-editor"><label className="ai-toggle"><input type="checkbox" checked={memory.enabled} onChange={e => setMemory(v => ({ ...v, enabled: e.target.checked }))}/> {tr("Xotiradan foydalanishga roziman")}</label><label htmlFor="ai-memory-content">{tr("Men uchun muhim narsalar")}</label><textarea id="ai-memory-content" maxLength={3000} value={memory.content} onChange={e => setMemory(v => ({ ...v, content: e.target.value }))} placeholder={tr("Masalan: 6 oyda favqulodda jamg'arma yig'moqchiman. Daromadim o'zgaruvchan.")}/><div className="ai-memory-actions"><span>{memory.content.length}/3000</span><button className="primary-action" onClick={() => void saveMemory()} disabled={savingMemory}>{savingMemory ? <Loader2 size={15} className="ai-spin"/> : <Save size={15}/>} {tr("Saqlash")}</button></div><p className="ai-privacy-note">{tr("Karta raqami, parol yoki boshqa maxfiy ma'lumot yozmang.")}</p></div>
     </div>}
+    </div></div>}
+
+    {sheet && <><div className="aiv-scrim dim" onClick={() => setSheet(false)}/><div className="aiv-sheet" role="dialog" aria-label={tr("Tezkor savollar")}>
+      <div className="aiv-grab"/><div className="aiv-sheet-head"><strong>{tr("Tezkor savollar")}</strong><button onClick={() => setSheet(false)} aria-label="close"><X size={18}/></button></div>
+      <div className="aiv-sheet-list">{CHIPS.map(c => <button key={c.label.uz} disabled={busy} onClick={() => pick(c)}><span>{c.emoji}</span>{c.label[lang]}</button>)}
+        <button onClick={() => { setSheet(false); setInput(v => v || (lang === "ru" ? "Если мои ежемесячные расходы сократятся на ... сум, " : "Agar oylik xarajatim ... so'mga kamaysa, ")); inputRef.current?.focus(); }}><span>🧪</span>{tr("Agar... bo'lsa?")}</button></div>
+    </div></>}
   </section>;
 }

@@ -15,6 +15,11 @@ export const metadata: Metadata = {
   title: "Hisobchi — shaxsiy moliya",
   description: "Daromad, xarajat va qarzlaringizni bir joyda boshqaring.",
   applicationName: "Hisobchi",
+  // iOS: "Bosh ekranga qo'shish"dan keyin Safari paneli yo'q, to'liq ekran
+  appleWebApp: { capable: true, title: "Hisobchi", statusBarStyle: "black-translucent" },
+  icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+  formatDetection: { telephone: false },
+  other: { "mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {
@@ -22,6 +27,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
   themeColor: "#050816",
 };
 

@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useState, useRef, type FormEvent } from "react";
 import {
   ArrowDownLeft, ArrowRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  ClipboardList, HandCoins, Home, ListPlus, MoreHorizontal, Plus, Receipt,
+  ClipboardList, HandCoins, Home, ListPlus, MoreHorizontal, Plus, Receipt, CalendarDays,
   Settings2, ShieldCheck, Languages, TrendingDown, TrendingUp, UserRound, Wallet, X,
   Utensils, Car, House, ShoppingBag, GraduationCap, HeartPulse, BrainCircuit,
-  BriefcaseBusiness, Gift, Pencil, Trash2, CircleDollarSign, History,
+  BriefcaseBusiness, Gift, Pencil, Trash2, CircleDollarSign, History, ArrowDownWideNarrow, ArrowUpNarrowWide,
 } from "lucide-react";
 import { formatUZS, parseAmount } from "@/lib/currency";
 import { localDateKey, monthLabel } from "@/lib/dates";
 import { summarize, summarizeDay, debtRemaining, type Tx } from "@/lib/finance";
 import AiAdvisor from "@/components/ai-advisor";
 import { useI18n } from "@/lib/i18n-client";
-import { formatNum } from "@/lib/i18n";
+import { formatNum, currencyWord } from "@/lib/i18n";
 
 /* ---------------- TYPES ---------------- */
 type Transaction = Tx & { id: string; categoryId: string; note: string; type: "INCOME" | "EXPENSE"; occurredAt: string };
@@ -124,6 +124,8 @@ export default function FinanceApp({ onSwitchToAdmin }: { onSwitchToAdmin?: () =
   const [debts, setDebts] = useState<Debt[]>([]);
   const [month, setMonth] = useState(() => new Date());
   const [page, setPage] = useState("Asosiy");
+  const [historyFilter, setHistoryFilter] = useState<"ALL" | "EXPENSE" | "INCOME">("ALL");
+  const [historyNewestFirst, setHistoryNewestFirst] = useState(false);
   const [reportTab, setReportTab] = useState("Oylik statistika");
   const [debtTab, setDebtTab] = useState<"LENT" | "BORROWED">("LENT");
   const [modal, setModal] = useState<"EXPENSE" | "INCOME" | "DEBT" | "CATEGORY" | "REPAY" | "EDIT" | null>(null);
@@ -460,8 +462,37 @@ export default function FinanceApp({ onSwitchToAdmin }: { onSwitchToAdmin?: () =
   );
 
   const daily = summarizeDay(transactions, selectedDate);
+  const historyGroups = useMemo(() => {
+    const groups = new Map<string, Transaction[]>();
+    for (const tx of summary.transactions) {
+      if (historyFilter !== "ALL" && tx.type !== historyFilter) continue;
+      const key = localDateKey(new Date(tx.occurredAt));
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(tx);
+    }
+    const dir = historyNewestFirst ? -1 : 1;
+    return [...groups.entries()].sort((a, b) => dir * a[0].localeCompare(b[0])).map(([key, rows]) => ({
+      key,
+      date: new Date(`${key}T12:00:00`),
+      rows: [...rows].sort((a, b) => dir * (+new Date(a.occurredAt) - +new Date(b.occurredAt))),
+      income: rows.filter(t => t.type === "INCOME").reduce((sum, t) => sum + t.amount, 0),
+      expense: rows.filter(t => t.type === "EXPENSE").reduce((sum, t) => sum + t.amount, 0),
+    }));
+  }, [summary.transactions, historyFilter, historyNewestFirst]);
+  const historyRows = useMemo(() => historyGroups.reduce((n, g) => n + g.rows.length, 0), [historyGroups]);
+  const historyDayName = (d: Date) => {
+    const today = new Date(); const yest = new Date(); yest.setDate(today.getDate() - 1);
+    const key = localDateKey(d);
+    const UZ_M = ["yanvar","fevral","mart","aprel","may","iyun","iyul","avgust","sentyabr","oktyabr","noyabr","dekabr"];
+    const UZ_W = ["yak","dush","sesh","chor","pay","jum","shan"];
+    const base = lang === "uz" ? `${d.getDate()} ${UZ_M[d.getMonth()]}` : d.toLocaleDateString(locale, { day: "numeric", month: "long" });
+    const wd = lang === "uz" ? UZ_W[d.getDay()] : d.toLocaleDateString(locale, { weekday: "short" });
+    if (key === localDateKey(today)) return `${tr("Bugun")}, ${base}`;
+    if (key === localDateKey(yest)) return `${tr("Kecha")}, ${base}`;
+    return `${base} · ${wd}`;
+  };
   const debtRows = debts.filter(d => d.direction === debtTab);
-  const nav = [{ name: "Asosiy", icon: Home }, { name: "Hisobot", icon: ClipboardList }, { name: "AI", icon: BrainCircuit }, { name: "Qarzlar", icon: HandCoins }, { name: "Profil", icon: UserRound }];
+  const nav = [{ name: "Asosiy", icon: Home }, { name: "Tarix", icon: History }, { name: "Hisobot", icon: ClipboardList }, { name: "AI", icon: BrainCircuit }, { name: "Qarzlar", icon: HandCoins }, { name: "Profil", icon: UserRound }];
 
   return (
     <>
@@ -486,7 +517,6 @@ export default function FinanceApp({ onSwitchToAdmin }: { onSwitchToAdmin?: () =
         {announcement && !announcementHidden && <section role="status" className="stat-card" style={{margin:"12px 16px", border:"1px solid var(--accent, #64748b)"}}>
           <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}><div><strong>📢 {announcement.title}</strong><p style={{whiteSpace:"pre-wrap",marginTop:8}}>{announcement.message}</p></div><button className="icon-btn" aria-label={tr("E'lonni yopish")} onClick={() => setAnnouncementHidden(true)}><X size={18}/></button></div>
         </section>}
-        {page === "AI" && <AiAdvisor />}
 
         {/* ==================== ASOSIY ==================== */}
         {page === "Asosiy" && <>
@@ -595,6 +625,75 @@ export default function FinanceApp({ onSwitchToAdmin }: { onSwitchToAdmin?: () =
             </div>
           </section>
         </>}
+
+        {/* ==================== OYLIK OPERATSIYALAR TARIXI (chat uslubi) ==================== */}
+        {page === "Tarix" && <div className="page-stack history-page">
+          <div className="month-row history-month-row">
+            <button className="icon-btn" aria-label={tr("Oldingi oy")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
+            <div className="month-title">{monthLabel(month, lang)}</div>
+            <button className="icon-btn" aria-label={tr("Keyingi oy")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
+            <button className="today-btn" onClick={() => setMonth(new Date())}>{tr("Joriy oy")}</button>
+          </div>
+
+          <section className="history-overview" aria-label={tr("Oylik tarix")}>
+            <div className="history-overview-top">
+              <div><span className="history-kicker">{tr("OYLIK HISOBOT")}</span><h2>{tr("Pul oqimi")}</h2></div>
+              <span className="history-overview-icon"><CalendarDays size={19}/></span>
+            </div>
+            <div className={`history-balance ${summary.difference < 0 ? "expense" : ""}`}>{summary.difference > 0 ? "+" : summary.difference < 0 ? "−" : ""}{formatNum(Math.abs(summary.difference), lang)} <small>{currencyWord(lang)}</small></div>
+            <div className="history-overview-caption">{tr("Tushum va xarajatlar farqi")}</div>
+            <div className="history-overview-stats">
+              <div><span><i className="history-dot expense-dot"/>{tr("Xarajat")}</span><strong className="expense">−{fmt(summary.expenses)}</strong></div>
+              <div><span><i className="history-dot income-dot"/>{tr("Tushum")}</span><strong className="income">+{fmt(summary.income)}</strong></div>
+            </div>
+          </section>
+
+          <div className="history-toolbar">
+            <div className="history-filters" role="tablist" aria-label={tr("Filtr")}>
+              {([["ALL", tr("Hammasi"), monthRows.length], ["EXPENSE", tr("Xarajatlar"), summary.transactions.filter(t => t.type === "EXPENSE").length], ["INCOME", tr("Tushumlar"), summary.transactions.filter(t => t.type === "INCOME").length]] as const).map(([key, label, count]) =>
+                <button type="button" role="tab" aria-selected={historyFilter === key} key={key} className={`history-chip chip-${key.toLowerCase()} ${historyFilter === key ? "active" : ""}`} onClick={() => setHistoryFilter(key)}>
+                  {key !== "ALL" && <i className="history-dot" />}{label}<small>{count}</small>
+                </button>)}
+            </div>
+            <button type="button" className="history-sort" onClick={() => setHistoryNewestFirst(v => !v)} aria-label={tr("Tartibni almashtirish")} title={historyNewestFirst ? tr("Yangidan eskiga") : tr("Eskidan yangiga")}>
+              {historyNewestFirst ? <ArrowDownWideNarrow size={15}/> : <ArrowUpNarrowWide size={15}/>}
+            </button>
+          </div>
+
+          {historyGroups.length ? <div className="history-chat">
+            {historyGroups.map(group => <section className="history-day" key={group.key} aria-label={group.date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" })}>
+              <div className="history-day-sep">
+                <span className="history-day-pill">
+                  {historyDayName(group.date)}
+                </span>
+                {(group.expense > 0 || group.income > 0) && <span className="history-day-sum">
+                  {group.expense > 0 && <em className="expense">−{formatNum(group.expense, lang)}</em>}
+                  {group.income > 0 && <em className="income">+{formatNum(group.income, lang)}</em>}
+                </span>}
+              </div>
+              {group.rows.map(t => {
+                const cat = categories.find(c => c.id === t.categoryId);
+                const isIncome = t.type === "INCOME";
+                const title = cat ? catLabel(cat.name) : isIncome ? tr("Tushum") : tr("Xarajat");
+                const time = new Date(t.occurredAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false });
+                return <div className={`history-row ${isIncome ? "row-income" : "row-expense"}`} key={t.id}>
+                  <button type="button" className={`history-bubble ${isIncome ? "bubble-income" : "bubble-expense"}`} onClick={() => editTransaction(t)} aria-label={`${tr("Tahrirlash")}: ${title}, ${isIncome ? "+" : "−"}${fmt(t.amount)}`}>
+                    <span className="bubble-top">
+                      <span className="bubble-icon" style={cat?.color ? { color: cat.color } : undefined}>{categoryIcon(cat?.name ?? "Boshqa")}</span>
+                      <span className="bubble-title">{title}</span>
+                      <Pencil className="bubble-edit" size={13} aria-hidden="true"/>
+                    </span>
+                    <span className="bubble-meta"><b>{isIncome ? tr("Tushum") : tr("Xarajat")}</b><time>{time}</time></span>
+                    <span className="bubble-amount">{isIncome ? "+" : ""}{formatNum(t.amount, lang)} <small>{currencyWord(lang)}</small></span>
+                    {t.note && <span className="bubble-note">{t.note}</span>}
+                  </button>
+                </div>;
+              })}
+            </section>)}
+            <div className="history-end">{tr("{n} ta operatsiya", { n: historyRows })}</div>
+          </div> : monthRows.length ? <div className="panel history-empty"><span className="history-empty-icon"><History size={25}/></span><h3>{tr("Hech narsa topilmadi")}</h3><p>{tr("Tanlangan filtr bo'yicha operatsiya yo'q.")}</p><div className="history-empty-actions"><button className="secondary-action" onClick={() => setHistoryFilter("ALL")}>{tr("Hammasi")}</button></div></div>
+          : <div className="panel history-empty"><span className="history-empty-icon"><History size={25}/></span><h3>{tr("Bu oyda operatsiyalar yo'q")}</h3><p>{tr("Tushum yoki xarajat qo'shsangiz, kunlar shu yerda avtomatik paydo bo'ladi.")}</p><div className="history-empty-actions"><button className="primary-action" onClick={() => openForm("EXPENSE")}><Plus size={16}/>{tr("Xarajat")}</button><button className="secondary-action" onClick={() => openForm("INCOME")}><TrendingUp size={16}/>{tr("Tushum")}</button></div></div>}
+        </div>}
 
         {/* ==================== HISOBOT ==================== */}
         {page === "Hisobot" && <div className="page-stack">
@@ -866,6 +965,9 @@ export default function FinanceApp({ onSwitchToAdmin }: { onSwitchToAdmin?: () =
           })}
         </div>
       </nav>
+
+      {/* ==================== AI (to'liq ekran) ==================== */}
+      {page === "AI" && <AiAdvisor onClose={() => setPage("Asosiy")} />}
 
       {/* ==================== TOAST ==================== */}
       {notice && <div className="toast" role="status" aria-live="polite">

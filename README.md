@@ -41,7 +41,7 @@ npm run db:seed
 3. Mini App uchun ommaviy HTTPS URL kerak; uni `WEB_APP_URL` ga yozing. Lokal brauzer prototipi botsiz ishlaydi; Telegram ichidagi Web App uchun HTTPS tunnel yoki hosting kerak.
 4. BotFather’da `/setmenubutton` orqali Mini App URL’ini belgilang yoki `/setdomain` sozlang.
 5. `npm run bot` bilan long-polling botni ishga tushiring. Bir xil token uchun webhook va long polling’ni bir vaqtda ishlatmang.
-6. `/start`, `/today`, `/month`, `/debts`, `/add` buyruqlari mavjud. Hisobot buyruqlari DB’da Telegram ID orqali avval ro‘yxatdan o‘tgan foydalanuvchini talab qiladi.
+6. Buyruqlar: `/start /today /week /month /top /balance /debts /last /add /budget /reminder /help`. Ovoz va matn orqali daromad, xarajat va **qarzlar**ni kiritish mumkin. Batafsil: [BOT.md](BOT.md). Hisobot buyruqlari DB’da Telegram ID orqali avval ro‘yxatdan o‘tgan foydalanuvchini talab qiladi.
 
 ## Environment variables
 - `DATABASE_URL` — PostgreSQL ulanish satri
