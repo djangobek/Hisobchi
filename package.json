@@ -1,11 +1,12 @@
+
 {
   "name": "hisobchi-finance-mini-app",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "concurrently -k -n WEB,BOT \"npm run start:web\" \"npm run bot\"",
+    "build": "prisma generate && next build",
+    "start": "concurrently --restart-tries -1 --restart-after 10000 -n WEB,BOT \"npm run start:web\" \"npm run bot\"",
     "start:web": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -28,10 +29,10 @@
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.62.0",
     "recharts": "^2.15.4",
-    "zod": "^4.1.5"
+    "zod": "^4.1.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
+    "@eslint/eslintrc": "^3.3.0",
     "@types/node": "^20.19.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
