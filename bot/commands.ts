@@ -18,6 +18,9 @@ function startKeyboard(lang: Lang) {
   const url = process.env.WEB_APP_URL;
   const kb = new InlineKeyboard();
   if (url) kb.webApp(tx(lang, "open"), url).row();
+  if (process.env.WIDGETS_ENABLED === "true") {
+    kb.text("📊 Oylik hisobot", "widget:dashboard").row();
+  }
   kb.text("🇺🇿 O'zbekcha", "lang:uz").text("🇷🇺 Русский", "lang:ru");
   return kb;
 }
@@ -55,6 +58,7 @@ export async function setupProfile(bot: Bot) {
         { command: "budget", description: L(lang, "Oylik byudjet limiti", "Месячный лимит") },
         { command: "reminder", description: L(lang, "Kunlik eslatmalar", "Ежедневные напоминания") },
         { command: "app", description: tx(lang, "cmdApp") },
+        { command: "dashboard", description: L(lang, "Oylik hisobot widgeti", "Месячный виджет-отчёт") },
         { command: "help", description: tx(lang, "cmdHelp") },
         { command: "lang", description: tx(lang, "cmdLang") },
       ];

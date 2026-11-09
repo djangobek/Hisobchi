@@ -53,6 +53,12 @@ OPERATSIYA TURLARI (kind):
 
 QOIDALAR:
 - Har bir summa faqat o'ziga tegishli bo'lsin; summalarni birlashtirma va birortasini tashlab ketma.
+- "sarflamadim", "to'lamadim", "olmadim", "qilmadim", "не тратил", "не платил" kabi inkor gaplar real operatsiya EMAS.
+- Reja/niyat ("ertaga sarflayman"), savol ("qancha sarfladim?") va shartli gaplar operatsiya EMAS.
+- "kartamga/hisobimga pul tushdi", "menga o'tkazishdi", "pul berishdi", "naqd pul oldim" — INCOME; "kartadan yechildi", "kommunal to'lov qildim", "pul yubordim" — EXPENSE.
+- O'z hisoblarim orasidagi pul ko'chirish daromad ham, xarajat ham emas; bunday holatni chiqarmagin.
+- Qarz olishni daromad, qarz berishni xarajat, qarz qaytarishni oddiy xarajat/daromad deb tasniflama: faqat tegishli DEBT/REPAY turidan foydalan.
+- Har bir operatsiya uchun aynan bitta summa ishlat. Bir summa asosida bir nechta operatsiya yaratma.
 - O'zbek sonlari: besh ming=5000, yetti yuz ming=700000, bir yarim million=1500000, ikki yuz ellik ming=250000, 25k=25000. Rus: пятьсот тысяч=500000.
 - Qarz operatsiyalari (DEBT_*, REPAY_*) uchun "person" majburiy: faqat ISM (qo'shimchasiz: "Alisherdan" → "Alisher"). Ism bo'lmasa, "person" ni bo'sh qoldir va confidence ni 0.4 dan oshirma.
 - Ma'lum ismlar: ${ctx.knownPeople.length ? ctx.knownPeople.slice(0, 40).join(", ") : "yo'q"}. Agar nutqdagi ism shularga o'xshasa, aynan shu yozuvni ishlat.
@@ -156,6 +162,8 @@ const DEFAULT_CAT = { INCOME: "Boshqa tushum", EXPENSE: "Boshqa" } as const;
 export function normalizeRows(rows: any[], transcript: string, ctx?: NluContext): { ops: DraftOp[]; uncertain: number } {
   const today = todayTashkent();
   const spans = extractAmounts(transcript).map(s => s.value);
+  const remainingAmounts = new Map<number, number>();
+  for (const value of spans) remainingAmounts.set(value, (remainingAmounts.get(value) ?? 0) + 1);
   const ops: DraftOp[] = []; let uncertain = 0;
   for (const row of rows) {
     if (!row || typeof row !== "object") { uncertain++; continue; }
@@ -166,8 +174,11 @@ export function normalizeRows(rows: any[], transcript: string, ctx?: NluContext)
     const isDebt = kind !== "INCOME" && kind !== "EXPENSE";
     const person = typeof row.person === "string" ? row.person.trim().slice(0, 60) : "";
     let warn: string | undefined;
-    // O'zaro tekshiruv: matnda aniqlangan summalar ichida yo'q bo'lsa — shubhali
-    if (spans.length && !spans.includes(Math.round(amount))) { confidence *= 0.8; warn = "amount"; }
+    // Qat'iy o'zaro tekshiruv: AI matnda aytilmagan yoki ortiqcha takrorlangan summani yarata olmaydi.
+    const amountKey = Math.round(amount);
+    const left = remainingAmounts.get(amountKey) ?? 0;
+    if (spans.length && left <= 0) { uncertain++; continue; }
+    if (spans.length) remainingAmounts.set(amountKey, left - 1);
     if (isDebt && !person) { confidence = Math.min(confidence, 0.4); warn = "person"; }
     if (confidence < CFG.minConfidence) { uncertain++; continue; }
     const category = typeof row.category === "string" ? row.category.trim().slice(0, 60) : "";
@@ -228,11 +239,25 @@ export async function extractOperations(transcript: string, ctx: NluContext): Pr
         rows = parseJsonRows(raw);
       }
       if (rows.length > CFG.maxOpsPerMessage) throw new TooManyOpsError(`Bir xabarda ${CFG.maxOpsPerMessage} tadan ortiq operatsiya`);
-      const { ops, uncertain } = normalizeRows(rows, transcript, ctx);
-      if (ops.length || uncertain) return { ops, uncertain, engine: a.engine };
-      // AI hech narsa topmadi — lokal parser bilan tekshirib ko'ramiz (AI ba'zan o'tkazib yuboradi)
+      const normalized = normalizeRows(rows, transcript, ctx);
+      // LLM ayrim summalarni tashlab ketgan bo'lsa, faqat matndan mustaqil topilgan
+      // va hali ishlatilmagan summalarga mos lokal natijalarni qo'shamiz.
       const local = localFallback(transcript, ctx);
-      return local.ops.length ? { ...local, engine: "local" } : { ops: [], uncertain: 0, engine: a.engine };
+      const counts = new Map<number, number>();
+      for (const value of extractAmounts(transcript).map(x => x.value)) counts.set(value, (counts.get(value) ?? 0) + 1);
+      for (const op of normalized.ops) counts.set(Math.round(op.amount), Math.max(0, (counts.get(Math.round(op.amount)) ?? 0) - 1));
+      const supplemental: DraftOp[] = [];
+      for (const op of local.ops) {
+        const key = Math.round(op.amount), left = counts.get(key) ?? 0;
+        if (left > 0) {
+          supplemental.push({ ...op, confidence: Math.min(op.confidence, 0.72), warn: "local" });
+          counts.set(key, left - 1);
+        }
+      }
+      const combined = [...normalized.ops, ...supplemental];
+      if (combined.length > CFG.maxOpsPerMessage) throw new TooManyOpsError(`Bir xabarda ${CFG.maxOpsPerMessage} tadan ortiq operatsiya`);
+      if (combined.length || normalized.uncertain) return { ops: combined, uncertain: normalized.uncertain, engine: supplemental.length ? "local" : a.engine };
+      return { ops: [], uncertain: 0, engine: a.engine };
     } catch (e) {
       if (e instanceof TooManyOpsError) throw e;
       console.warn(`[NLU] ${a.engine} muvaffaqiyatsiz: ${e instanceof Error ? e.message : e}`);

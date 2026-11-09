@@ -13,6 +13,8 @@ export const CFG = {
   providerCooldownMs: 5 * 60_000,
   reminderHour: num(process.env.REMINDER_HOUR, 21),
   debtReminderHour: num(process.env.DEBT_REMINDER_HOUR, 9),
+  /** STT: Gemini audio primary -> ElevenLabs secondary -> Muxlisa tertiary. */
+  geminiSttModel: process.env.GEMINI_STT_MODEL || "gemini-2.5-flash",
   elevenLabsModel: process.env.ELEVENLABS_STT_MODEL || "scribe_v1",
   elevenLabsLanguage: process.env.ELEVENLABS_STT_LANGUAGE || "uz",
   geminiModels: (process.env.GEMINI_MODEL || "gemini-2.5-flash").split(",").map(s => s.trim().replace(/^models\//, "")).filter(Boolean),

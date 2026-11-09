@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+:root{color-scheme:dark;--bg:#050810;--card:#0b1226;--line:#1a2a50;--blue:#3b82ff;--blue2:#7fb0ff;--txt:#eef3ff;--hint:#7f90b6;--inc:#38bdf8;--exp:#fb7185;--pos:#34d399}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{padding:2px;font:13px/1.25 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--txt);background:transparent}
+.wrap{padding:12px 12px 13px;border:1px solid var(--line);border-radius:20px;background:radial-gradient(120% 90% at 100% 0,#0d1f4a 0,transparent 60%),linear-gradient(180deg,#09102250,#050810);transition:opacity .2s}
+.wrap.load{opacity:.55}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.brand{font-weight:800;font-size:11px;letter-spacing:1.6px;background:linear-gradient(90deg,#fff,var(--blue2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.nav{display:flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px}
+.nav button{width:30px;height:28px;border:0;border-radius:9px;background:transparent;color:var(--blue2);font-size:18px;line-height:1;font-weight:700;display:grid;place-items:center;padding:0}
+.nav button:active:not(:disabled){background:#16264f}
+.nav button:disabled{color:#34416a;opacity:.5}
+.month{min-width:104px;text-align:center;font-weight:750;font-size:12.5px;letter-spacing:.2px}
+.hero{margin:12px 0 11px}
+.cap{font-size:9.5px;font-weight:700;letter-spacing:1.1px;color:var(--hint)}
+.net{font-size:29px;font-weight:850;letter-spacing:-.9px;font-variant-numeric:tabular-nums;margin-top:3px;white-space:nowrap}
+.net small{font-size:13px;font-weight:700;letter-spacing:0;color:var(--hint);margin-left:4px}
+.pos{color:var(--pos)}.neg{color:var(--exp)}.zero{color:var(--txt)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{display:flex;align-items:center;gap:9px;min-width:0;padding:9px 10px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
+.ic{flex:none;width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:14px;font-weight:800}
+.ic.i{background:#0c2a3f;color:var(--inc)}.ic.e{background:#3a1523;color:var(--exp)}
+.tv{min-width:0}
+.tv span{display:block;font-size:10px;color:var(--hint);font-weight:600}
+.tv b{display:block;margin-top:2px;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.i b{color:var(--inc)}.tile.e b{color:var(--exp)}
+.ratio{display:flex;height:5px;margin-top:11px;border-radius:5px;overflow:hidden;background:#13204a}
+.ratio i{display:block;height:100%;transition:width .35s ease}
+.ratio .ri{background:linear-gradient(90deg,#2563eb,var(--inc))}.ratio .re{background:linear-gradient(90deg,#be3a56,var(--exp))}
+.err{display:none;margin-top:9px;text-align:center;font-size:10.5px;color:var(--exp)}
+</style></head><body><main class="wrap" id="wrap">
+<div class="top"><div class="brand">HISOBCHI</div>
+<div class="nav"><button id="prev" aria-label="Oldingi oy">‹</button><div class="month" id="month">—</div><button id="next" aria-label="Keyingi oy">›</button></div></div>
+<section class="hero"><div class="cap">OYLIK FARQ</div><div class="net zero" id="net">—</div></section>
+<section class="tiles">
+<div class="tile i"><div class="ic i">↗</div><div class="tv"><span>Daromad</span><b id="inc">—</b></div></div>
+<div class="tile e"><div class="ic e">↘</div><div class="tv"><span>Xarajat</span><b id="exp">—</b></div></div>
+</section>
+<div class="ratio" id="ratio"><i class="ri" style="width:50%"></i><i class="re" style="width:50%"></i></div>
+<div class="err" id="err"></div>
+</main><script>
+(()=>{
+const $=id=>document.getElementById(id);
+const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktyabr','Noyabr','Dekabr'];
+const KEY=/^\d{4}-(0[1-9]|1[0-2])$/;
+let state={m:'',i:0,e:0,pv:'',nx:''},busy=false;
+const fmt=n=>String(Math.round(Math.abs(Number(n)||0))).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+const label=k=>KEY.test(k)?MONTHS[Number(k.slice(5))-1]+' '+k.slice(0,4):'—';
+function draw(){
+  const net=state.i-state.e;
+  $('month').textContent=label(state.m);
+  const n=$('net');n.className='net '+(net>0?'pos':net<0?'neg':'zero');
+  n.innerHTML=(net>0?'+':net<0?'−':'')+fmt(net)+'<small>so‘m</small>';
+  $('inc').textContent=fmt(state.i);
+  $('exp').textContent=fmt(state.e);
+  const tot=state.i+state.e,pi=tot>0?Math.round(state.i/tot*100):50;
+  $('ratio').innerHTML='<i class="ri" style="width:'+pi+'%"></i><i class="re" style="width:'+(100-pi)+'%"></i>';
+  $('prev').disabled=!state.pv||busy;
+  $('next').disabled=!state.nx||busy;
+}
+function fail(e){
+  const t=e&&e.code==='RATE_LIMITED'?'Juda tez bosildi. Biroz kuting.':e&&e.code==='TIMEOUT'?'Javob kechikdi. Qayta urinib ko‘ring.':'Ma’lumotni yangilab bo‘lmadi.';
+  const el=$('err');el.textContent=t;el.style.display='block';
+}
+async function load(key){
+  if(!window.TelegramWidget||busy)return;
+  busy=true;$('wrap').classList.add('load');$('err').style.display='none';draw();
+  try{
+    const a=await TelegramWidget.request('m:'+key);
+    const d=a&&a.result?JSON.parse(a.result):null;
+    if(d&&d.ok&&d.state)state=d.state;else fail();
+  }catch(e){fail(e)}
+  busy=false;$('wrap').classList.remove('load');draw();
+}
+$('prev').onclick=()=>{if(state.pv)load(state.pv)};
+$('next').onclick=()=>{if(state.nx)load(state.nx)};
+draw();
+if(window.TelegramWidget){
+  const cur=()=>KEY.test(state.m)?state.m:'cur';
+  TelegramWidget.onEvent('chatDataChanged',()=>load(cur()));
+  TelegramWidget.ready();
+  load('cur');
+}
+})();
+</script></body></html>

@@ -54,4 +54,14 @@ describe("operatsiyalarni ajratish", () => {
     expect(guessCategory("taksi", "EXPENSE")).toBe("Transport");
     expect(guessCategory("noma'lum", "EXPENSE")).toBe("Boshqa");
   });
-});
+
+  it("karta va hisobga tushgan pulni daromad deb taniydi", () => {
+    const [op] = parseFinanceText("Kartamga 450 ming tushdi");
+    expect(op).toMatchObject({ kind: "INCOME", amount: 450000 });
+    expect(parseFinanceText("Naqd 200 ming pul oldim")[0]).toMatchObject({ kind: "INCOME", amount: 200000 });
+  });
+  it("inkor va kelajak rejasini operatsiya deb saqlamaydi", () => {
+    expect(parseFinanceText("Bugun 50 ming sarflamadim")).toEqual([]);
+    expect(parseFinanceText("Ertaga 100 ming to'layman")).toEqual([]);
+  });
+ });

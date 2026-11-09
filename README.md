@@ -124,3 +124,22 @@ Yangilashdan so'ng: `npx prisma migrate deploy`.
 - Removed the uploaded `.env` containing credentials. Copy `.env.example` to `.env` and enter fresh secrets before running the project.
 
 Run `npm ci`, `npm run db:generate`, `npm run typecheck`, `npm test`, and `npm run build` in an environment with access to the configured package registry and PostgreSQL before deploying.
+
+
+## Ovozli moliyaviy kiritish — ko'p bosqichli AI
+
+- **STT (ovozdan matn):** Gemini audio birlamchi, ElevenLabs Scribe ikkinchi, Muxlisa uchinchi zaxira.
+- **NLU (matndan moliyaviy operatsiya):** Gemini modellari → Groq → lokal parser.
+- Transkripsiya asl tilda saqlanadi; AI audio matnini tarjima qilmaydi.
+- Operatsiyalar bo'yicha AI chiqargan summalar transkripsiyadagi aniqlangan summalar bilan qat'iy tekshiriladi. AI o'tkazib yuborgan summalar lokal parser orqali qayta tekshiriladi.
+- Inkor gaplar, kelajak rejalari va o'z hisoblari orasidagi o'tkazmalarni daromad/xarajat sifatida noto'g'ri yozmaslik uchun qo'shimcha qoidalar qo'shilgan.
+- `.env` ichida `GEMINI_API_KEY` va `GEMINI_STT_MODEL` ni sozlang. `ELEVENLABS_API_KEY` ikkinchi bosqich, `MUXLISA_API_KEY` uchinchi bosqich uchun ixtiyoriy.
+
+
+## Telegram HTML Widget (experimental Bot API 10.4)
+
+`/dashboard` — oylik hisobot widgeti: daromad, xarajat va farq; oldingi/keyingi oyga o‘tish tugmalari bilan. Sozlash va cheklovlar: [WIDGETS_BOT_API_10_4.md](WIDGETS_BOT_API_10_4.md).
+
+```env
+WIDGETS_ENABLED="true"
+```

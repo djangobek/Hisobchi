@@ -1,7 +1,7 @@
 # Hisobchi boti — yangilanish (v2)
 
 ## Ovoz tizimi
-**Nutq → matn:** ElevenLabs Scribe (asosiy) → Muxlisa AI (zaxira).
+**Nutq → matn:** Gemini audio (asosiy) → ElevenLabs Scribe (2-daraja) → Muxlisa AI (3-daraja). Har bir provayder alohida timeout, qayta urinish va vaqtinchalik chetlatish (circuit breaker) bilan ishlaydi. Gemini audio transkripsiyada asl til, ism va summalarni saqlashga yo‘naltirilgan; tarjima qilmaydi.
 - 5xx/timeout bo'lsa — bir marta qayta uriniladi.
 - Kalit xato yoki kvota tugasa (401/402/403/429) provayder 5 daqiqaga navbat oxiriga suriladi (circuit breaker), shuning uchun har xabarda vaqt yo'qotilmaydi.
 
@@ -39,6 +39,8 @@ Oddiy matn ham ovoz kabi tahlil qilinadi: «taksiga 18000, bozorga 120 ming».
 ## Tuzatilgan xatolar
 - Sanalar endi doim Asia/Tashkent bo'yicha (`/today` serverda UTC bo'lsa noto'g'ri kunni ko'rsatardi).
 - Gemini API kaliti URL o'rniga `x-goog-api-key` sarlavhasida yuboriladi (loglarda oshkor bo'lmaydi).
+- STT uchun `GEMINI_API_KEY` umumiy Gemini kaliti sifatida ishlatiladi; model `GEMINI_STT_MODEL` bilan belgilanadi. ElevenLabs ikkinchi darajada `ELEVENLABS_API_KEY` talab qiladi; Muxlisa uchinchi zaxira.
+- Matnni operatsiyaga aylantirishda summa matndan qat'iy tekshiriladi: AI aytilmagan yoki ortiqcha takrorlangan summani saqlay olmaydi. AI tashlab ketgan summalar lokal parser bilan qayta tekshiriladi.
 - Bot 1 faylli 560 qatordan 9 ta modulga bo'lindi (`bot/`), foydalanuvchi bo'yicha so'rovlar limiti qo'shildi.
 
 ## Baza
@@ -47,7 +49,7 @@ Oddiy matn ham ovoz kabi tahlil qilinadi: «taksiga 18000, bozorga 120 ming».
 ## Cheklovlar
 - Draft'lar xotirada (15 daqiqa); bot qayta ishga tushsa tasdiqlanmagan draft yo'qoladi — ovozni qayta yuborish kifoya.
 - Bot va Mini App bir vaqtda ochiq bo'lsa, Mini App eski holatni saqlasa botdan kiritilgan yozuvlarni ustidan yozishi mumkin (ilovadagi `/api/data` to'liq snapshot sinxronlaydi). Botdan kiritgandan so'ng ilovani qayta oching.
-- Bu muhitda internet va Telegram/ElevenLabs/Muxlisa kalitlari yo'q edi: STT/NLU zanjiri soxta HTTP javoblari bilan sinaldi, haqiqiy API bilan emas. Kalitlarni qo'ygach `/start` va bitta ovozli xabar bilan tekshiring.
+- Haqiqiy Gemini, ElevenLabs va Muxlisa API chaqiruvlari deployment muhitida alohida sinovdan o'tkazilishi kerak. Kalitlarni qo'ygach `/start` va turli summali 3-4 ta ovozli xabar bilan tekshiring.
 
 ## Tekshiruv
 ```bash

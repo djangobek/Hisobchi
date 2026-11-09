@@ -141,8 +141,8 @@ export function parseAmount(text: string): number | null {
 /* Niyat (intent) aniqlash                                             */
 /* ------------------------------------------------------------------ */
 
-const EXPENSE_VERBS = /(sarfla|to'la[dm]|to'ladim|xarj|sotib ол|sotib ol|oldim|berdim|ketdi|chiqdi|kеtdi|потрат|заплат|купил|оплат|отдал за|ушло|расход)/;
-const INCOME_VERBS = /(tushdi|tushum|topdim|maosh|oylik|ish haqi|daromad|keldi|oldim maosh|получил зарплат|зарплат|заработал|доход|пришло|поступил|premiya|bonus|kashbek|cashback)/;
+const EXPENSE_VERBS = /(sarfla|to'la[dm]|to'ladim|xarj|sotib ол|sotib ol|oldim|berdim|ketdi|chiqdi|kеtdi|потрат|заплат|купил|оплат|отдал за|ушло|расход|yechildi|yechib ol|pul yubordim|перевел|списал|оплата)/;
+const INCOME_VERBS = /(tushdi|tushum|topdim|maosh|oylik|ish haqi|daromad|keldi|oldim maosh|получил зарплат|зарплат|заработал|доход|пришло|поступил|premiya|bonus|kashbek|cashback|kartamga|hisobimga|berishdi|o'tkazishdi|o'tkazib berishdi|berishdi|зачислили|перевели мне)/;
 const LENT_WORDS = /(qarz berdim|qarzga berdim|qarz berib|qarzga pul berdim|qarz bo'ldi.*menga|дал в долг|одолжил|занял ему|дал взаймы|qarz berdi?m)/;
 const BORROW_WORDS = /(qarz oldim|qarzga oldim|qarz olib|qarz so'radim|qarzdorman|qarz bo'ldim|взял в долг|занял у|одолжил у|занял|qarzga pul oldim)/;
 const REPAY_IN_WORDS = /(qarzini qaytardi\b|qarzini berdi\b|qaytarib berdi\b|qaytardi\b|qarzini to'ladi\b|вернул мне|отдал долг мне|qaytarib oldim|qarzini oldim|qarzini qaytarib)/;
@@ -239,6 +239,9 @@ export function splitClauses(text: string): string[] {
 
 export function classifyClause(clause: string): OpKind | null {
   const n = normalizeText(clause);
+  // Inkor va kelajak/reja ifodalari pul operatsiyasi sifatida yozilmasin.
+  if (/(\b(?:emas|qilmadim|sarflamadim|to'lamadim|olmadim|bermadim|ketmadi|bo'lmadi|не\s+(?:тратил|платил|покупал|получал|брал|давал))\b)/u.test(n)) return null;
+  if (/(\b(?:ertaga|keyinroq|rejalashtiryapman|sarflayman|to'layman|olaman|beraman|буду\s+(?:тратить|платить|покупать))\b)/u.test(n)) return null;
   const firstPerson = /(qaytardim\b|qaytarib berdim|qarzimni|вернул долг|погасил долг|отдал долг\b)/.test(n) && !/вернул мне/.test(n);
   if (firstPerson && REPAY_OUT_WORDS.test(n)) return "REPAY_OUT";
   if (REPAY_IN_WORDS.test(n)) return "REPAY_IN";
@@ -250,6 +253,8 @@ export function classifyClause(clause: string): OpKind | null {
     if (/(oldim|взял|занял|olganman)/.test(n)) return "DEBT_BORROWED";
     if (/(berdim|дал|одолжил|bergan)/.test(n)) return "DEBT_LENT";
   }
+  const incomingTransfer = /(kartamga|hisobimga|(?:pul|naqd)\s+oldim|menga\s+(?:\d+\s+)?(?:pul\s+)?berishdi|зачислили|перевели\s+мне)/.test(n);
+  if (incomingTransfer) return "INCOME";
   const inc = INCOME_VERBS.test(n), exp = EXPENSE_VERBS.test(n);
   if (inc && !exp) return "INCOME";
   if (exp && !inc) return /maosh|oylik|ish haqi|зарплат/.test(n) ? "INCOME" : "EXPENSE";

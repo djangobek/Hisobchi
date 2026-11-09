@@ -17,12 +17,15 @@ import { registerCommands, setupProfile } from "./commands";
 import { prisma } from "./store";
 import { startScheduler } from "./scheduler";
 import { registerVoice } from "./voice";
+import { registerWidgetHandlers } from "./widgets";
 
 const token = process.env.BOT_TOKEN;
 if (!token) { console.error("BOT_TOKEN .env faylida ko'rsatilmagan."); process.exit(1); }
 
-const bot = new Bot(token);
+const apiRoot = process.env.TELEGRAM_BOT_API_BASE_URL || (process.env.WIDGETS_ENABLED === "true" ? "https://api.telegram.org/beta" : "https://api.telegram.org");
+const bot = new Bot(token, { client: { apiRoot } });
 
+registerWidgetHandlers(bot); // Bot API 10.4 widget queries va widget buyruqlari
 registerCommands(bot); // buyruqlar va callback'lar (til, /last, ...)
 registerVoice(bot);    // ovoz, audio, oddiy matn — buyruqlardan KEYIN ro'yxatga olinishi shart
 
