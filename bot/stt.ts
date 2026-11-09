@@ -1,139 +1,63 @@
 /**
- * Nutq -> matn (STT), uch bosqichli failover:
- * 1) Gemini multimodal audio (asosiy)
- * 2) ElevenLabs Scribe (ikkinchi provayder)
- * 3) Muxlisa (uchinchi/zaxira provayder)
- *
- * Transkripsiya original tilda olinadi; tarjima yoki xulosa qilish taqiqlangan.
- * Har bir provayder alohida timeout va circuit-breaker bilan ishlaydi.
+ * Nutq → matn (STT).
+ *   1) Muxlisa AI — asosiy va birinchi.
+ *   2) ElevenLabs Scribe — faqat Muxlisa ishlamasa yoki transkripsiya yaroqsiz bo'lsa.
+ * Gemini/Groq STT sifatida ishlatilmaydi. Muxlisa muvaffaqiyatli bo'lsa ElevenLabs chaqirilmaydi.
+ * Audio faqat xotirada (Buffer); diskka yozilmaydi.
  */
 import { CFG } from "./config";
-import { sleep } from "./util";
+import { AiError, Breaker, redact, shouldCoolDown } from "./ai/errors";
+import { muxlisaTranscribe } from "./ai/muxlisa";
+import { elevenLabsTranscribe } from "./ai/elevenlabs";
+import { isUsableTranscript, normalizeTranscript } from "./ai/text";
 
-export type SttProvider = "gemini" | "elevenlabs" | "muxlisa";
-export type SttResult = { text: string; provider: SttProvider };
+export type SttProvider = "muxlisa" | "elevenlabs";
+export type SttResult = { text: string; provider: SttProvider; fallback: boolean };
 
-class SttError extends Error {
-  constructor(message: string, public readonly status?: number, public readonly fatal = false) { super(message); }
-}
-
-const cooldownUntil: Record<SttProvider, number> = { gemini: 0, elevenlabs: 0, muxlisa: 0 };
-
-function extractText(value: any): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (!value || typeof value !== "object") return null;
-  for (const key of ["text", "transcription", "transcript", "result", "recognized_text", "output"]) {
-    const c = value[key];
-    if (typeof c === "string" && c.trim()) return c.trim();
+/** Foydalanuvchiga ko'rsatiladigan sabab turi (texnik matn emas). */
+export type SttFailReason = "unconfigured" | "unusable" | "unavailable";
+export class SttFailure extends Error {
+  constructor(public readonly reason: SttFailReason, public readonly details: string[] = []) {
+    super(`STT muvaffaqiyatsiz: ${reason}${details.length ? ` (${details.join(" | ")})` : ""}`);
+    this.name = "SttFailure";
   }
-  for (const c of Object.values(value)) { const found = extractText(c); if (found) return found; }
-  return null;
 }
 
-function normalizeTranscript(text: string): string {
-  return text.replace(/\u0000/g, "").replace(/\s+/g, " ").trim().slice(0, 12_000);
-}
+const breaker = new Breaker(CFG.providerCooldownMs);
+/** Testlar uchun. */
+export const resetSttState = () => breaker.reset();
 
-async function viaGemini(audio: Buffer, mime: string, uiLang: "uz" | "ru"): Promise<string> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new SttError("GEMINI_API_KEY sozlanmagan", undefined, true);
-  const model = CFG.geminiSttModel;
-  const prompt = uiLang === "ru"
-    ? "Точно расшифруй речь в аудио. Сохрани исходный язык, имена, числа, валюты и порядок слов. Не переводи, не пересказывай и не исправляй смысл. Верни только распознанный текст. Если фрагмент неразборчив, обозначь его как [неразборчиво]."
-    : "Audio ichidagi nutqni aynan yozuvga aylantir. O'zbekcha/ruscha aralash nutq bo'lsa, asl tillarni saqla. Ismlar, summalar, sonlar, valyuta birliklari va so'zlar tartibini o'zgartirma. Tarjima, xulosa yoki izoh yozma. Faqat transkripsiyani qaytar. Tushunarsiz joyni [noaniq] deb belgilagin.";
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [
-        { text: prompt },
-        { inline_data: { mime_type: mime || "audio/ogg", data: audio.toString("base64") } },
-      ] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 2048 },
-    }),
-    signal: AbortSignal.timeout(55_000),
-  });
-  const data: any = await res.json().catch(() => null);
-  if (!res.ok) throw new SttError(`Gemini STT HTTP ${res.status}: ${data?.error?.message || "API xatosi"}`, res.status, [400, 401, 403, 404, 429].includes(res.status));
-  const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join(" ").trim();
-  if (!text) throw new SttError("Gemini bo'sh transkripsiya qaytardi");
-  return text;
-}
+export const sttConfigured = () => Boolean(process.env.MUXLISA_API_KEY || process.env.ELEVENLABS_API_KEY);
 
-async function viaElevenLabs(audio: Buffer, filename: string, mime: string, hint: string | null): Promise<string> {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new SttError("ELEVENLABS_API_KEY sozlanmagan", undefined, true);
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), filename);
-  form.append("model_id", CFG.elevenLabsModel);
-  form.append("tag_audio_events", "false");
-  form.append("diarize", "false");
-  if (hint) form.append("language_code", hint);
-  const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
-    method: "POST", headers: { "xi-api-key": key }, body: form, signal: AbortSignal.timeout(45_000),
-  });
-  const data: any = await res.json().catch(() => null);
-  if (!res.ok) throw new SttError(`ElevenLabs HTTP ${res.status}`, res.status, [401, 402, 403, 429].includes(res.status));
-  const text = extractText(data);
-  if (!text) throw new SttError("ElevenLabs bo'sh transkripsiya qaytardi");
-  return text;
-}
+type Step = { name: SttProvider; enabled: boolean; run: () => Promise<string> };
 
-async function viaMuxlisa(audio: Buffer, filename: string, mime: string): Promise<string> {
-  const key = process.env.MUXLISA_API_KEY;
-  if (!key) throw new SttError("MUXLISA_API_KEY sozlanmagan", undefined, true);
-  const form = new FormData();
-  form.append("audio", new Blob([new Uint8Array(audio)], { type: mime }), filename);
-  const res = await fetch("https://service.muxlisa.uz/api/v2/stt", {
-    method: "POST", headers: { "x-api-key": key }, body: form, signal: AbortSignal.timeout(45_000),
-  });
-  const data: any = await res.json().catch(() => null);
-  if (!res.ok) throw new SttError(`Muxlisa HTTP ${res.status}`, res.status, [401, 402, 403, 429].includes(res.status));
-  const text = extractText(data);
-  if (!text) throw new SttError("Muxlisa bo'sh yoki tanilmagan javob qaytardi");
-  return text;
-}
-
-async function attempt(name: SttProvider, run: () => Promise<string>): Promise<string> {
-  let lastErr: unknown;
-  for (let i = 0; i < 2; i++) {
-    try { return normalizeTranscript(await run()); }
-    catch (e) {
-      lastErr = e;
-      if (e instanceof SttError && (e.fatal || (e.status && e.status < 500 && e.status !== 408))) break;
-      if (i === 0) await sleep(500);
-    }
-  }
-  if (lastErr instanceof SttError && (lastErr.fatal || lastErr.status === 429 || lastErr.status === 402)) {
-    cooldownUntil[name] = Date.now() + CFG.providerCooldownMs;
-  }
-  throw lastErr;
-}
-
-export const sttConfigured = () => Boolean(process.env.GEMINI_API_KEY || process.env.ELEVENLABS_API_KEY || process.env.MUXLISA_API_KEY);
-
-/** uiLang faqat tilga oid ko'rsatma; rus interfeysida ham audio tili avtomatik aniqlanadi. */
 export async function transcribe(audio: Buffer, filename: string, mime: string, uiLang: "uz" | "ru"): Promise<SttResult> {
-  const hint = uiLang === "ru" ? null : CFG.elevenLabsLanguage === "auto" ? null : CFG.elevenLabsLanguage;
-  const chain: { name: SttProvider; enabled: boolean; run: () => Promise<string> }[] = [
-    { name: "gemini", enabled: Boolean(process.env.GEMINI_API_KEY), run: () => viaGemini(audio, mime, uiLang) },
-    { name: "elevenlabs", enabled: Boolean(process.env.ELEVENLABS_API_KEY), run: () => viaElevenLabs(audio, filename, mime, hint) },
-    { name: "muxlisa", enabled: Boolean(process.env.MUXLISA_API_KEY), run: () => viaMuxlisa(audio, filename, mime) },
+  // Rus interfeysida til avtomatik aniqlanadi; o'zbekda sozlangan til (standart "uz").
+  const hint = uiLang === "ru" || CFG.elevenLabsLanguage === "auto" ? null : CFG.elevenLabsLanguage;
+  const steps: Step[] = [
+    { name: "muxlisa", enabled: Boolean(process.env.MUXLISA_API_KEY), run: () => muxlisaTranscribe(audio, filename, mime, CFG.muxlisaTimeoutMs) },
+    { name: "elevenlabs", enabled: Boolean(process.env.ELEVENLABS_API_KEY), run: () => elevenLabsTranscribe(audio, filename, mime, { model: CFG.elevenLabsModel, language: hint, timeoutMs: CFG.elevenLabsTimeoutMs }) },
   ];
-  const enabled = chain.filter(p => p.enabled);
-  // Sog'lom provayderlar belgilangan tartibda; cooldown bo'lganlar keyinga suriladi.
-  const ordered = [...enabled.filter(p => cooldownUntil[p.name] <= Date.now()), ...enabled.filter(p => cooldownUntil[p.name] > Date.now())];
+  const enabled = steps.filter(s => s.enabled);
+  if (!enabled.length) throw new SttFailure("unconfigured");
+
+  // Tartib doim: Muxlisa → ElevenLabs. Kalit/kvota xatosi bo'lgan provayder vaqtincha oxirga suriladi.
+  const ordered = [...enabled.filter(s => !breaker.isOpen(s.name)), ...enabled.filter(s => breaker.isOpen(s.name))];
   const errors: string[] = [];
-  for (const p of ordered) {
+  let emptyish = 0; // bo'sh yoki yaroqsiz transkripsiya (xizmat ishladi, lekin matn chiqmadi)
+  for (const step of ordered) {
     try {
-      const text = await attempt(p.name, p.run);
-      if (!text) throw new SttError("Bo'sh transkripsiya");
-      return { text, provider: p.name };
+      const text = normalizeTranscript(await step.run());
+      if (!isUsableTranscript(text)) throw new AiError(step.name, "unusable", `${step.name}: yaroqsiz transkripsiya`);
+      return { text, provider: step.name, fallback: step.name !== "muxlisa" };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`${p.name}: ${msg}`);
-      console.warn(`[STT] ${p.name} muvaffaqiyatsiz; fallback davom etadi (${msg})`);
+      if (e instanceof AiError && (e.kind === "unusable" || e.kind === "empty")) emptyish++;
+      if (shouldCoolDown(e) && !(e instanceof AiError && e.kind === "config")) breaker.trip(step.name);
+      const msg = redact(e);
+      errors.push(msg);
+      console.warn(`[STT] ${step.name} muvaffaqiyatsiz${step === ordered[ordered.length - 1] ? "" : "; zaxiraga o'tilmoqda"}: ${msg}`);
     }
   }
-  throw new Error(errors.length ? `Barcha STT provayderlari xato: ${errors.join(" | ")}` : "STT provayderi sozlanmagan");
+  // Hammasi yaroqsiz/bo'sh transkripsiya qaytargan bo'lsa — bu ovoz muammosi, xizmat muammosi emas.
+  throw new SttFailure(emptyish >= ordered.length ? "unusable" : "unavailable", errors);
 }

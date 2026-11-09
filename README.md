@@ -106,7 +106,8 @@ Yangilashdan so'ng: `npx prisma migrate deploy`.
 ## Adminlar
 `.env` dagi `ADMIN_TELEGRAM_IDS="111,222"` (vergul bilan) — shu Telegram ID lar Mini App ochilganda avtomatik ADMIN bo'ladi va admin panelga tushadi. Terminalda `db:seed` shart emas. Adminda "User rejimi" tugmasi va user rejimida suzuvchi "Admin panel" tugmasi bor. `.env` o'zgargach serverni qayta ishga tushiring.
 
-## Hisobchi AI (Gemini + Groq)
+## Hisobchi AI (web-ilova bo'limi: Gemini + Groq)
+> Eslatma: bu bo'lim faqat Mini App ichidagi AI maslahatchi. **Telegram bot** ovoz/NLU jarayonida Gemini ishlatilmaydi — pastdagi bo'limga qarang.
 - Web ilovada `AI` bo'limi mavjud. AI foydalanuvchining o'ziga tegishli oxirgi 12 oylik tranzaksiyalar, kategoriya yig'indilari va ochiq qarzlaridan kontekst tayyorlaydi.
 - Provayder tartibi: avval Gemini; quota/rate-limit (429), vaqtinchalik server xatosi (5xx), timeout yoki tarmoq xatosida Groq zaxira sifatida ishlatiladi. Noto'g'ri kalit yoki yaroqsiz so'rovda takroriy provayder almashtirish bajarilmaydi.
 - Kalitlar faqat serverdagi `.env` ichida saqlanadi: `GEMINI_API_KEY`, `GROQ_API_KEY`. Model nomlari `GEMINI_MODEL` va `GROQ_MODEL` bilan boshqariladi. Groq uchun standart model `openai/gpt-oss-120b` bo‘lib, `max_completion_tokens=2048` va `reasoning_effort=medium` ishlatiladi. Ularni hech qachon `NEXT_PUBLIC_` bilan boshlamang.
@@ -126,15 +127,14 @@ Yangilashdan so'ng: `npx prisma migrate deploy`.
 Run `npm ci`, `npm run db:generate`, `npm run typecheck`, `npm test`, and `npm run build` in an environment with access to the configured package registry and PostgreSQL before deploying.
 
 
-## Ovozli moliyaviy kiritish — ko'p bosqichli AI
+## Ovozli moliyaviy kiritish (Telegram bot)
 
-- **STT (ovozdan matn):** Gemini audio birlamchi, ElevenLabs Scribe ikkinchi, Muxlisa uchinchi zaxira.
-- **NLU (matndan moliyaviy operatsiya):** Gemini modellari → Groq → lokal parser.
-- Transkripsiya asl tilda saqlanadi; AI audio matnini tarjima qilmaydi.
-- Operatsiyalar bo'yicha AI chiqargan summalar transkripsiyadagi aniqlangan summalar bilan qat'iy tekshiriladi. AI o'tkazib yuborgan summalar lokal parser orqali qayta tekshiriladi.
-- Inkor gaplar, kelajak rejalari va o'z hisoblari orasidagi o'tkazmalarni daromad/xarajat sifatida noto'g'ri yozmaslik uchun qo'shimcha qoidalar qo'shilgan.
-- `.env` ichida `GEMINI_API_KEY` va `GEMINI_STT_MODEL` ni sozlang. `ELEVENLABS_API_KEY` ikkinchi bosqich, `MUXLISA_API_KEY` uchinchi bosqich uchun ixtiyoriy.
-
+- **STT (ovozdan matn):** Muxlisa AI — asosiy; ElevenLabs Scribe — faqat Muxlisa ishlamasa yoki transkripsiya bo'sh/yaroqsiz bo'lsa. Muxlisa muvaffaqiyatli bo'lsa ElevenLabs chaqirilmaydi.
+- **NLU (matndan operatsiya):** Groq — yagona AI; lokal parser — faqat Groq ishlamaganda.
+- Gemini bot jarayonlarida ishlatilmaydi.
+- AI summalari transkripsiya bilan qat'iy tekshiriladi; matnda aytilmagan summa rad etiladi, noaniq summa/valyuta bazaga yozilmaydi (foydalanuvchidan aniqlashtirish so'raladi).
+- Saqlash faqat foydalanuvchi "✅ Saqlash" tugmasini bosgandan keyin; takroriy update/audio DB darajasida himoyalangan.
+- Batafsil: `AI_REFACTOR.md`, `BOT.md`.
 
 ## Telegram HTML Widget (experimental Bot API 10.4)
 

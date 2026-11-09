@@ -1,13 +1,20 @@
 # Hisobchi boti — yangilanish (v2)
 
-## Ovoz tizimi
-**Nutq → matn:** Gemini audio (asosiy) → ElevenLabs Scribe (2-daraja) → Muxlisa AI (3-daraja). Har bir provayder alohida timeout, qayta urinish va vaqtinchalik chetlatish (circuit breaker) bilan ishlaydi. Gemini audio transkripsiyada asl til, ism va summalarni saqlashga yo‘naltirilgan; tarjima qilmaydi.
-- 5xx/timeout bo'lsa — bir marta qayta uriniladi.
-- Kalit xato yoki kvota tugasa (401/402/403/429) provayder 5 daqiqaga navbat oxiriga suriladi (circuit breaker), shuning uchun har xabarda vaqt yo'qotilmaydi.
+## Ovoz tizimi (AI qayta qurilgan)
+**Nutq → matn (STT):** Muxlisa AI (asosiy) → ElevenLabs Scribe (faqat zaxira). Gemini/Groq STT sifatida ishlatilmaydi.
+- Muxlisa muvaffaqiyatli bo'lsa ElevenLabs **chaqirilmaydi**.
+- 5xx/timeout/tarmoq xatosida bir marta qayta uriniladi; kalit/kvota xatosida (401/402/403/429) provayder 5 daqiqaga navbat oxiriga suriladi (circuit breaker).
+- Bo'sh yoki yaroqsiz transkripsiya ("...", "[noaniq]") ham zaxiraga o'tish sababi.
+- Audio faqat xotirada ushlanadi, diskka yozilmaydi.
 
-**Matn → operatsiya:** Gemini (bir nechta model) → Groq → **lokal parser** (`src/lib/voice-parser.ts`).
-Lokal parser o'zbek va rus sonlarini ("yetti yuz ellik ming", "bir yarim million", "пятьсот тысяч") va qarz iboralarini tushunadi — barcha AI kvotalari tugasa ham bot ishlayveradi.
-AI natijasi lokal parser bilan o'zaro tekshiriladi: matnda yo'q summa "⚠️ Summani tekshiring" deb belgilanadi.
+**Matn → operatsiya (NLU):** Groq (yagona AI) → lokal parser (`src/lib/voice-parser.ts`, faqat Groq ishlamaganda).
+- JSON javob `{"operations":[...]}` ko'rinishida; ```json fence, oldidan/keyin izoh, bitta obyekt yoki massiv ko'rinishi ham xavfsiz o'qiladi.
+- AI natijasi transkripsiyadagi summalar bilan o'zaro tekshiriladi; aytilmagan summa rad etiladi.
+- Noaniq summa (`null`/0), so'mdan boshqa valyuta, qarzda ism yo'qligi — bazaga yozilmaydi, foydalanuvchiga "aniqroq ayting" deyiladi.
+
+**Ovoz uzunligi:** 15 soniyadan uzun xabarda aniqlik haqida ogohlantirish ko'rsatiladi (`VOICE_WARN_SECONDS`); `VOICE_MAX_SECONDS` (60) dan uzuni rad etiladi (mavjud loyiha limiti saqlangan).
+
+**Takroriy yozuvdan himoya:** `update_id` dedup (middleware), xabar bo'yicha qayta ishlash qulfi, saqlashda `AppSetting` markeri (`voice:done:<user>:<xabar>`) + `requestKey` unique indeksi.
 
 ## Kategoriyalar (v3)
 - Bot **faqat sizning mavjud kategoriyalaringizdan** tanlaydi; AI'ga standart ro'yxat aralashtirilmaydi va yangi nom o'ylab topish taqiqlangan.
@@ -38,9 +45,7 @@ Oddiy matn ham ovoz kabi tahlil qilinadi: «taksiga 18000, bozorga 120 ming».
 
 ## Tuzatilgan xatolar
 - Sanalar endi doim Asia/Tashkent bo'yicha (`/today` serverda UTC bo'lsa noto'g'ri kunni ko'rsatardi).
-- Gemini API kaliti URL o'rniga `x-goog-api-key` sarlavhasida yuboriladi (loglarda oshkor bo'lmaydi).
-- STT uchun `GEMINI_API_KEY` umumiy Gemini kaliti sifatida ishlatiladi; model `GEMINI_STT_MODEL` bilan belgilanadi. ElevenLabs ikkinchi darajada `ELEVENLABS_API_KEY` talab qiladi; Muxlisa uchinchi zaxira.
-- Matnni operatsiyaga aylantirishda summa matndan qat'iy tekshiriladi: AI aytilmagan yoki ortiqcha takrorlangan summani saqlay olmaydi. AI tashlab ketgan summalar lokal parser bilan qayta tekshiriladi.
+- Matnni operatsiyaga aylantirishda summa matndan qat'iy tekshiriladi: AI aytilmagan yoki ortiqcha takrorlangan summani saqlay olmaydi. Groq tashlab ketgan summalar avtomatik qo'shilmaydi — "noaniq" deb foydalanuvchiga ko'rsatiladi.
 - Bot 1 faylli 560 qatordan 9 ta modulga bo'lindi (`bot/`), foydalanuvchi bo'yicha so'rovlar limiti qo'shildi.
 
 ## Baza
@@ -49,7 +54,7 @@ Oddiy matn ham ovoz kabi tahlil qilinadi: «taksiga 18000, bozorga 120 ming».
 ## Cheklovlar
 - Draft'lar xotirada (15 daqiqa); bot qayta ishga tushsa tasdiqlanmagan draft yo'qoladi — ovozni qayta yuborish kifoya.
 - Bot va Mini App bir vaqtda ochiq bo'lsa, Mini App eski holatni saqlasa botdan kiritilgan yozuvlarni ustidan yozishi mumkin (ilovadagi `/api/data` to'liq snapshot sinxronlaydi). Botdan kiritgandan so'ng ilovani qayta oching.
-- Haqiqiy Gemini, ElevenLabs va Muxlisa API chaqiruvlari deployment muhitida alohida sinovdan o'tkazilishi kerak. Kalitlarni qo'ygach `/start` va turli summali 3-4 ta ovozli xabar bilan tekshiring.
+- Haqiqiy Muxlisa, ElevenLabs va Groq API chaqiruvlari deployment muhitida alohida sinovdan o'tkazilishi kerak. Kalitlarni qo'ygach `/start` va turli summali 3-4 ta ovozli xabar bilan tekshiring.
 
 ## Tekshiruv
 ```bash

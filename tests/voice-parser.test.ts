@@ -24,6 +24,8 @@ describe("o'zbek va rus sonlari", () => {
   });
   it("bir nechta summa", () => {
     expect(amounts("avtobusga besh ming ovqatga yetti ming")).toEqual([5000, 7000]);
+    expect(amounts("Do'kondan 120 mingga mahsulot oldim, taksiga 25 ming sarfladim")).toEqual([120000, 25000]);
+    expect(amounts("2 milliondan keyin 3 millionni")).toEqual([2000000, 3000000]);
   });
 });
 

@@ -85,10 +85,31 @@ export async function planOperations(userId: string, ops: DraftOp[], db: { debt:
   });
 }
 
-export type CommitResult = { saved: number; skipped: number; txCount: number; debtCount: number; repayCount: number };
+export type CommitResult = { saved: number; skipped: number; txCount: number; debtCount: number; repayCount: number; duplicate?: boolean };
 
-export async function commitOperations(userId: string, tokenId: string, ops: DraftOp[]): Promise<CommitResult> {
+const DONE_PREFIX = "voice:done:";
+
+/**
+ * `dedupKey` — manba xabarining barqaror kaliti (masalan `voice:<chatId>:<messageId>`).
+ * Bir xil kalit bilan ikkinchi marta saqlash DB darajasida rad etiladi: avval AppSetting'da
+ * `voice:done:<userId>:<dedupKey>` yozuvi (PRIMARY KEY) yaratiladi — ikki parallel so'rovdan faqat bittasi o'tadi.
+ * Tranzaksiya qatorlari ham `requestKey` (unique userId+requestKey) bilan himoyalangan.
+ */
+export async function commitOperations(userId: string, dedupKey: string, ops: DraftOp[]): Promise<CommitResult> {
+  try {
+    return await commitOnce(userId, dedupKey, ops);
+  } catch (e: any) {
+    if (e?.code === "P2002") return { saved: 0, skipped: 0, txCount: 0, debtCount: 0, repayCount: 0, duplicate: true };
+    throw e;
+  }
+}
+
+async function commitOnce(userId: string, tokenId: string, ops: DraftOp[]): Promise<CommitResult> {
   return prisma.$transaction(async tx => {
+    // 1) Takroriy saqlashdan himoya (P2002 → commitOperations "duplicate" deb qaytaradi).
+    await tx.appSetting.create({ data: { key: `${DONE_PREFIX}${userId}:${tokenId}`, value: "1" } });
+    // Eski belgilar (7 kundan oshgan) tozalanadi.
+    await tx.appSetting.deleteMany({ where: { key: { startsWith: DONE_PREFIX }, updatedAt: { lt: new Date(Date.now() - 7 * 86_400_000) } } });
     // Saqlash paytida qarz holati qayta tekshiriladi (draft va saqlash orasida o'zgargan bo'lishi mumkin).
     const planned = await planOperations(userId, ops, tx as any);
     const r: CommitResult = { saved: 0, skipped: 0, txCount: 0, debtCount: 0, repayCount: 0 };
@@ -106,7 +127,7 @@ export async function commitOperations(userId: string, tokenId: string, ops: Dra
         });
         await tx.transaction.create({ data: {
           userId, amount: op.amount, type: op.kind, categoryId: category.id, note: op.note,
-          occurredAt: startOfDay(op.date), requestKey: `voice:${tokenId}:${i}`,
+          occurredAt: startOfDay(op.date), requestKey: `${tokenId}:${i}`,
         } });
         r.txCount++; r.saved++;
       } else if (op.kind === "DEBT_LENT" || op.kind === "DEBT_BORROWED") {

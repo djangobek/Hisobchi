@@ -11,13 +11,18 @@ import { CFG } from "./config";
 import { langOf, rateLimited, requireUser, openKeyboard } from "./ctx";
 import { extractOperations, TooManyOpsError, type DraftOp } from "./nlu";
 import { budgetStatus, commitOperations, loadContext, planOperations, type PlannedOp } from "./store";
-import { sttConfigured, transcribe } from "./stt";
+import { SttFailure, sttConfigured, transcribe } from "./stt";
+import { TtlSet } from "./dedup";
+import { redact } from "./ai/errors";
 import { tx } from "./texts";
 import { L, bar, fmtDate, htmlEscape } from "./util";
 
-type Draft = { token: string; telegramId: string; userId: string; ops: DraftOp[]; transcript: string; createdAt: number; source: string; cats: CatInfo[] };
+type Draft = { token: string; telegramId: string; userId: string; ops: DraftOp[]; transcript: string; createdAt: number; source: string; cats: CatInfo[]; dedupKey: string };
 const drafts = new Map<string, Draft>();
 const saving = new Set<string>();
+/** Hozir qayta ishlanayotgan va allaqachon saqlangan manba xabarlar (takroriy yozuvdan himoya). */
+const processing = new Set<string>();
+const savedSources = new TtlSet(CFG.dedupTtlMs);
 
 /** Tanlash menyusi uchun bir xil tartibdagi kategoriyalar (indeks callback ichida ketadi). */
 const catsFor = (d: Draft, kind: DraftOp["kind"]) => d.cats.filter(c => c.type === kind).sort((a, b) => a.name.localeCompare(b.name));
@@ -88,25 +93,29 @@ function keyboard(planned: PlannedOp[], token: string, lang: Lang) {
 
 /* ---------------- Draft yaratish ---------------- */
 
-async function createDraft(ctx: Context, userId: string, lang: Lang, transcript: string, source: string, editMsgId: number): Promise<void> {
+async function createDraft(ctx: Context, userId: string, lang: Lang, transcript: string, source: string, editMsgId: number, dedupKey: string): Promise<void> {
   const chatId = ctx.chat!.id;
   const edit = (text: string, extra: Record<string, unknown> = {}) => ctx.api.editMessageText(chatId, editMsgId, text, extra as any).catch(() => {});
   try {
     const nluCtx = await loadContext(userId);
     const nlu = await extractOperations(transcript, nluCtx);
-    console.log(`[VOICE] src=${source} nlu=${nlu.engine} ops=${nlu.ops.length} uncertain=${nlu.uncertain}`);
+    console.log(`[VOICE] src=${source} nlu=${nlu.engine} ops=${nlu.ops.length} uncertain=${nlu.uncertain} foreignCurrency=${nlu.foreignCurrency}`);
     if (!nlu.ops.length) {
       const heard = `\n\n📝 <i>${htmlEscape(transcript)}</i>`;
-      return void await edit((nlu.uncertain ? tx(lang, "voiceUnclear") : tx(lang, "voiceNoOperations")) + heard, { parse_mode: "HTML" });
+      const msg = nlu.foreignCurrency
+        ? L(lang, "💱 Hozircha faqat so‘mdagi summalar saqlanadi. Valyutani so‘mda ayting, masalan: «100 ming so‘m».", "💱 Пока сохраняются только суммы в сумах. Назовите сумму в сумах, например: «100 тысяч сумов».")
+        : nlu.uncertain ? tx(lang, "voiceUnclear") : tx(lang, "voiceNoOperations");
+      return void await edit(msg + heard, { parse_mode: "HTML" });
     }
-    const draft: Draft = { token: randomUUID().replace(/-/g, "").slice(0, 20), telegramId: String(ctx.from!.id), userId, ops: nlu.ops, transcript, createdAt: Date.now(), source, cats: nluCtx.categories };
+    const draft: Draft = { token: randomUUID().replace(/-/g, "").slice(0, 20), telegramId: String(ctx.from!.id), userId, ops: nlu.ops, transcript, createdAt: Date.now(), source, cats: nluCtx.categories, dedupKey };
     gc(); drafts.set(draft.token, draft);
     const planned = await planOperations(userId, draft.ops);
-    const extra = nlu.uncertain ? `\n\n⚠️ ${L(lang, `${nlu.uncertain} ta noaniq operatsiya o‘tkazib yuborildi. Ularni alohida ayting.`, `Неясных операций пропущено: ${nlu.uncertain}. Продиктуйте их отдельно.`)}` : "";
+    const extra = (nlu.uncertain ? `\n\n⚠️ ${L(lang, `${nlu.uncertain} ta noaniq operatsiya (summa yoki tur aniq emas) o‘tkazib yuborildi. Ularni aniqroq qilib alohida ayting.`, `Неясных операций пропущено: ${nlu.uncertain} (сумма или тип неясны). Продиктуйте их точнее отдельно.`)}` : "")
+      + (nlu.foreignCurrency ? `\n\n💱 ${L(lang, `${nlu.foreignCurrency} ta operatsiya so‘mda emasligi uchun o‘tkazib yuborildi.`, `Операций не в сумах пропущено: ${nlu.foreignCurrency}.`)}` : "");
     await edit(formatDraft(planned, draft, lang) + extra, { parse_mode: "HTML", reply_markup: keyboard(planned, draft.token, lang) });
   } catch (e) {
     if (e instanceof TooManyOpsError) return void await edit(L(lang, `Bir xabarda ${CFG.maxOpsPerMessage} tadan ortiq operatsiya bo‘lishi mumkin emas. Iltimos, qismlarga bo‘ling.`, `В одном сообщении не может быть больше ${CFG.maxOpsPerMessage} операций. Разбейте на части.`));
-    console.error("[VOICE] Draft yaratishda xato:", e instanceof Error ? e.message : e);
+    console.error("[VOICE] Draft yaratishda xato:", redact(e));
     await edit(tx(lang, "voiceRetry"));
   }
 }
@@ -118,43 +127,86 @@ export async function handleTextInput(ctx: Context, text: string): Promise<void>
   const gate = await requireUser(ctx); if (!gate) return;
   if (rateLimited(`u:${gate.user.id}`)) return void await ctx.reply(L(lang, "⏳ Juda tez-tez so‘rov yuboryapsiz. Bir daqiqadan so‘ng urinib ko‘ring.", "⏳ Слишком много запросов. Попробуйте через минуту."));
   if (text.length > 1000) return void await ctx.reply(L(lang, "Matn juda uzun (1000 belgigacha).", "Слишком длинный текст (до 1000 символов)."));
-  const status = await ctx.reply(tx(gate.lang, "voiceAnalyzing"));
-  await createDraft(ctx, gate.user.id, gate.lang, text, "text", status.message_id);
+  const dedupKey = `text:${ctx.chat?.id ?? "x"}:${ctx.msg?.message_id ?? Date.now()}`;
+  if (processing.has(dedupKey) || savedSources.has(dedupKey)) return;
+  processing.add(dedupKey);
+  try {
+    const status = await ctx.reply(tx(gate.lang, "voiceAnalyzing"));
+    await createDraft(ctx, gate.user.id, gate.lang, text, "text", status.message_id, dedupKey);
+  } finally { processing.delete(dedupKey); }
+}
+
+/* ---------------- Xatolar ---------------- */
+
+class VoiceError extends Error {
+  constructor(public readonly kind: "download" | "toolarge", message: string) { super(message); this.name = "VoiceError"; }
+}
+
+/** Foydalanuvchiga ko'rsatiladigan sodda xabar. Stack trace va provayder xabarlari hech qachon yuborilmaydi. */
+export function friendlyError(e: unknown, lang: Lang): string {
+  if (e instanceof SttFailure) {
+    if (e.reason === "unusable") return L(lang, "🔇 Ovoz aniq eshitilmadi. Shovqinsiz joyda, sekinroq va aniqroq gapirib qayta yuboring yoki matn bilan yozing.", "🔇 Речь не удалось разобрать. Запишите ещё раз в тихом месте, медленнее и чётче, или напишите текстом.");
+    if (e.reason === "unconfigured") return tx(lang, "voiceNotConfigured");
+    return L(lang, "🛠 Ovozni matnga aylantirish xizmati hozir javob bermayapti. Bir ozdan so‘ng qayta urinib ko‘ring yoki ma’lumotni matn bilan yozing.", "🛠 Сервис распознавания речи сейчас недоступен. Попробуйте чуть позже или напишите запись текстом.");
+  }
+  if (e instanceof VoiceError) {
+    if (e.kind === "toolarge") return L(lang, "📦 Audio fayl juda katta. Qisqaroq ovozli xabar yuboring.", "📦 Аудиофайл слишком большой. Отправьте более короткое сообщение.");
+    return L(lang, "📡 Ovozli xabarni yuklab bo‘lmadi. Qayta yuborib ko‘ring.", "📡 Не удалось загрузить голосовое сообщение. Отправьте ещё раз.");
+  }
+  return tx(lang, "voiceRetry");
 }
 
 /* ---------------- Ro'yxatdan o'tkazish ---------------- */
 
 export function registerVoice(bot: Bot) {
   const token = process.env.BOT_TOKEN!;
+  // index.ts bilan bir xil mantiq: getFile va file yuklash bir xil serverda bo'lishi shart.
+  const apiRoot = process.env.TELEGRAM_BOT_API_BASE_URL
+    || (process.env.WIDGETS_ENABLED === "true" ? "https://api.telegram.org/beta" : "https://api.telegram.org");
 
   bot.on(["message:voice", "message:audio"], async ctx => {
     const gate = await requireUser(ctx); if (!gate) return;
     const { user, lang } = gate;
     const media = ctx.message.voice ?? ctx.message.audio; if (!media) return;
-    if (media.duration > CFG.voiceMaxSeconds) return void ctx.reply(L(lang, `⏱ Ovozli xabar ${CFG.voiceMaxSeconds} soniyadan oshmasligi kerak. Qisqaroq qilib qayta yuboring.`, `⏱ Голосовое сообщение должно быть не длиннее ${CFG.voiceMaxSeconds} секунд. Отправьте покороче.`));
+    if (media.duration > CFG.voiceMaxSeconds) return void ctx.reply(L(lang, `⏱ Ovozli xabar ${CFG.voiceMaxSeconds} soniyadan oshmasligi kerak (sizniki ${media.duration} soniya). Qisqaroq qilib, bo‘lib-bo‘lib yuboring.`, `⏱ Голосовое сообщение должно быть не длиннее ${CFG.voiceMaxSeconds} секунд (у вас ${media.duration}). Отправьте короче, по частям.`));
     if (!sttConfigured()) return void ctx.reply(tx(lang, "voiceNotConfigured"));
     if (rateLimited(`u:${user.id}`)) return void ctx.reply(L(lang, "⏳ Juda tez-tez so‘rov yuboryapsiz. Bir daqiqadan so‘ng urinib ko‘ring.", "⏳ Слишком много запросов. Попробуйте через минуту."));
 
-    const status = await ctx.reply(L(lang, "🎧 <b>1/3.</b> Ovoz yuklanmoqda…", "🎧 <b>1/3.</b> Загружаем аудио…"), { parse_mode: "HTML" });
-    const progress = (text: string) => ctx.api.editMessageText(ctx.chat.id, status.message_id, text, { parse_mode: "HTML" }).catch(() => {});
+    // Takroriy qayta ishlashdan himoya: bir xabar bir vaqtda ikki marta ishlanmaydi, saqlangani qayta yozilmaydi.
+    const dedupKey = `voice:${ctx.chat.id}:${ctx.message.message_id}`;
+    if (processing.has(dedupKey)) return;
+    if (savedSources.has(dedupKey)) return void ctx.reply(L(lang, "✅ Bu ovozli xabar allaqachon saqlangan.", "✅ Это голосовое сообщение уже сохранено."));
+    processing.add(dedupKey);
+
+    // 15 soniyadan uzun xabarda aniq ogohlantirish (rad etilmaydi — qattiq limit voiceMaxSeconds).
+    const longNote = media.duration > CFG.voiceWarnSeconds
+      ? `\n\n⚠️ ${L(lang, `Xabar ${media.duration} soniya — ${CFG.voiceWarnSeconds} soniyadan uzun. Aniqlik pasayishi mumkin, natijani diqqat bilan tekshiring. Eng yaxshi natija uchun qisqa gaplar bilan yuboring.`, `Сообщение ${media.duration} сек. — длиннее ${CFG.voiceWarnSeconds} сек. Точность может снизиться, внимательно проверьте результат. Лучше отправлять короткими фразами.`)}`
+      : "";
+    const status = await ctx.reply(`🎧 <b>1/3.</b> ${L(lang, "Ovoz yuklanmoqda…", "Загружаем аудио…")}${longNote}`, { parse_mode: "HTML" });
+    const progress = (text: string) => ctx.api.editMessageText(ctx.chat.id, status.message_id, text + longNote, { parse_mode: "HTML" }).catch(() => {});
     try {
       const file = await ctx.api.getFile(media.file_id);
-      if (!file.file_path) throw new Error("Telegram audio fayl manzili yo'q");
-      const dl = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`, { signal: AbortSignal.timeout(20_000) });
-      if (!dl.ok) throw new Error(`Telegram audio HTTP ${dl.status}`);
-      const audio = Buffer.from(await dl.arrayBuffer());
-      if (audio.length > CFG.voiceMaxBytes) throw new Error("Audio fayl hajmi limitdan katta");
+      if (!file.file_path) throw new VoiceError("download", "Telegram audio fayl manzili yo'q");
+      // MUHIM: fayl `apiRoot` orqali yuklanadi — beta server bilan mos bo'lishi uchun.
+      const dl = await fetch(`${apiRoot}/file/bot${token}/${file.file_path}`, { signal: AbortSignal.timeout(20_000) })
+        .catch(() => { throw new VoiceError("download", "Telegram audio yuklanmadi (tarmoq)"); });
+      if (!dl.ok) throw new VoiceError("download", `Telegram audio HTTP ${dl.status}`);
+      let audio: Buffer | null = Buffer.from(await dl.arrayBuffer()); // faqat xotirada; diskka yozilmaydi
+      if (audio.length > CFG.voiceMaxBytes) throw new VoiceError("toolarge", "Audio fayl hajmi limitdan katta");
 
-      await progress(`<b>2/3.</b> ${tx(lang, "voiceTranscribing")}`);
+      await progress(`🗣 <b>2/3.</b> ${tx(lang, "voiceTranscribing")}`);
       const stt = await transcribe(audio, file.file_path.split("/").pop() || "voice.ogg", media.mime_type || "audio/ogg", lang);
-      console.log(`[VOICE] STT=${stt.provider} belgilar=${stt.text.length}`);
+      audio = null; // GC uchun bo'shatamiz
+      console.log(`[VOICE] STT=${stt.provider}${stt.fallback ? " (zaxira)" : ""} belgilar=${stt.text.length}`);
 
-      await progress(`<b>3/3.</b> ${tx(lang, "voiceAnalyzing")}`);
-      await createDraft(ctx, user.id, lang, stt.text, `voice:${stt.provider}`, status.message_id);
+      await progress(`🤖 <b>3/3.</b> ${tx(lang, "voiceAnalyzing")}`);
+      // Statusdagi ogohlantirish draft xabariga o'tmaydi: createDraft xabarni to'liq almashtiradi.
+      await createDraft(ctx, user.id, lang, stt.text, `voice:${stt.provider}`, status.message_id, dedupKey);
     } catch (e) {
-      console.error("[VOICE] Ovoz tahlili muvaffaqiyatsiz:", e instanceof Error ? e.message : e);
-      await progress(tx(lang, "voiceRetry"));
-    }
+      // Texnik tafsilot faqat logda (kalitlar yashirilgan); foydalanuvchiga — sodda tushuntirish.
+      console.error("[VOICE] Ovoz tahlili muvaffaqiyatsiz:", redact(e));
+      await ctx.api.editMessageText(ctx.chat.id, status.message_id, friendlyError(e, lang), { parse_mode: "HTML" }).catch(() => {});
+    } finally { processing.delete(dedupKey); }
   });
 
   /** Oddiy matn: "ovqatga 25 ming", "Alisherdan 500 ming qarz oldim" — ovozdagi kabi tahlil qilinadi. */
@@ -229,8 +281,18 @@ export function registerVoice(bot: Bot) {
     if (saving.has(tokenId)) return void ctx.answerCallbackQuery({ text: tx(lang, "voiceSaving") });
     saving.add(tokenId);
     try {
-      const result = await commitOperations(draft.userId, tokenId, draft.ops);
+      if (savedSources.has(draft.dedupKey)) {
+        drafts.delete(tokenId);
+        await ctx.answerCallbackQuery({ text: L(lang, "Bu yozuvlar allaqachon saqlangan", "Эти записи уже сохранены") }).catch(() => {});
+        return void await ctx.editMessageText(`✅ ${L(lang, "Bu yozuvlar allaqachon saqlangan — takroriy yozuv qilinmadi.", "Эти записи уже сохранены — дубликат не создан.")}`, { reply_markup: openKeyboard(lang) }).catch(() => {});
+      }
+      const result = await commitOperations(draft.userId, draft.dedupKey, draft.ops);
       drafts.delete(tokenId);
+      savedSources.add(draft.dedupKey);
+      if (result.duplicate) {
+        await ctx.answerCallbackQuery({ text: L(lang, "Bu yozuvlar allaqachon saqlangan", "Эти записи уже сохранены") }).catch(() => {});
+        return void await ctx.editMessageText(`✅ ${L(lang, "Bu yozuvlar allaqachon saqlangan — takroriy yozuv qilinmadi.", "Эти записи уже сохранены — дубликат не создан.")}`, { reply_markup: openKeyboard(lang) }).catch(() => {});
+      }
       await ctx.answerCallbackQuery({ text: L(lang, `${result.saved} ta yozuv saqlandi`, `Сохранено: ${result.saved}`) }).catch(() => {});
       // DB commit tugagan: Telegram UI xatolari saqlashni "muvaffaqiyatsiz" qilib ko'rsatmasligi kerak.
       const summary = savedSummary(result, draft, lang);
@@ -246,7 +308,7 @@ export function registerVoice(bot: Bot) {
         }
       }
     } catch (e) {
-      console.error("[VOICE] Saqlash muvaffaqiyatsiz:", e instanceof Error ? e.message : e);
+      console.error("[VOICE] Saqlash muvaffaqiyatsiz:", redact(e));
       await ctx.answerCallbackQuery({ text: tx(lang, "voiceSaveFailed"), show_alert: true }).catch(() => {});
     } finally { saving.delete(tokenId); }
   });
@@ -260,4 +322,3 @@ function savedSummary(r: { saved: number; skipped: number; txCount: number; debt
   const skipped = r.skipped ? `\n⚠️ ${L(lang, `Saqlanmadi: ${r.skipped} ta (mos qarz topilmadi)`, `Не сохранено: ${r.skipped} (долг не найден)`)}` : "";
   return `✅ <b>${L(lang, `${r.saved} ta yozuv muvaffaqiyatli saqlandi`, `Успешно сохранено записей: ${r.saved}`)}</b>\n\n${parts.join("\n")}${skipped}\n\n📝 <i>${htmlEscape(d.transcript)}</i>`;
 }
-

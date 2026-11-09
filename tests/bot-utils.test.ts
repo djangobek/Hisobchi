@@ -27,9 +27,10 @@ describe("AI javobini tekshirish", () => {
     expect(ops.length).toBe(1);
     expect(uncertain).toBe(2);
   });
-  it("matnda yo'q summani belgilaydi", () => {
-    const { ops } = normalizeRows([{ kind: "EXPENSE", amount: 99000, category: "Boshqa", note: "", date: "2026-10-29", confidence: 0.99 }], "ovqatga besh ming");
-    expect(ops[0].warn).toBe("amount");
+  it("matnda yo'q summani (gallyutsinatsiya) rad etadi", () => {
+    const { ops, uncertain } = normalizeRows([{ kind: "EXPENSE", amount: 99000, category: "Boshqa", note: "", date: "2026-10-29", confidence: 0.99 }], "ovqatga besh ming");
+    expect(ops).toHaveLength(0);
+    expect(uncertain).toBe(1);
   });
   it("```json bilan o'ralgan javobni o'qiydi", () => expect(parseJsonRows('```json\n[{"a":1}]\n```')).toEqual([{ a: 1 }]));
 });

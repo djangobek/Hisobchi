@@ -74,6 +74,9 @@ function classify(word: string): Token {
   if (w in HUNDREDS_RU) return { raw: word, num: HUNDREDS_RU[w] };
   if (HUNDRED_WORDS.has(w)) return { raw: word, isHundred: true };
   if (w in SCALE) return { raw: word, scale: SCALE[w] };
+  // "120 mingga", "3 millionni", "2 milliondan" — qo'shimchali miqyos so'zlari ham miqyos hisoblanadi
+  const sfx = w.match(/^(ming|million|milliard|mln|mlrd|минг)(ga|ka|qa|da|dan|ni|ning|lik|dek|cha)$/);
+  if (sfx && sfx[1] in SCALE) return { raw: word, scale: SCALE[sfx[1]] };
   if (HALF.has(w)) return { raw: word, isHalf: true };
   return { raw: word };
 }
