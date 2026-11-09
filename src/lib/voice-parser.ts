@@ -87,6 +87,9 @@ export type NumberSpan = { value: number; start: number; end: number };
  */
 export function extractAmounts(text: string): NumberSpan[] {
   const words = normalizeText(text)
+    // "1 500 000", "250,000" va "1.500.000" kabi guruhlangan summalarni
+    // bitta songa birlashtiramiz. Aks holda ovozdan tanilgan summa bo'linib ketadi.
+    .replace(/\b\d{1,3}(?:[ ,.]+\d{3})+\b/g, match => match.replace(/[ ,.]/g, ""))
     // "25k", "25ming" kabi yopishgan yozuvlarni ajratamiz
     .replace(/(\d)(k|к|ming|минг|млн|mln|million|тыс)\b/g, "$1 $2")
     .split(" ")
@@ -256,6 +259,10 @@ export function classifyClause(clause: string): OpKind | null {
   const incomingTransfer = /(kartamga|hisobimga|(?:pul|naqd)\s+oldim|menga\s+(?:\d+\s+)?(?:pul\s+)?berishdi|зачислили|перевели\s+мне)/.test(n);
   if (incomingTransfer) return "INCOME";
   const inc = INCOME_VERBS.test(n), exp = EXPENSE_VERBS.test(n);
+  // Qisqa, tabiiy yozuvlar ham qabul qilinsin: "taksiga 25 ming", "ovqat 40 ming".
+  // Faqat taniqli xarajat kategoriyasi aniq tilga olinganda lokal fallback EXPENSE deydi.
+  const implicitExpense = !inc && !exp && guessCategoryByRules(n, "EXPENSE") !== null;
+  if (implicitExpense) return "EXPENSE";
   if (inc && !exp) return "INCOME";
   if (exp && !inc) return /maosh|oylik|ish haqi|зарплат/.test(n) ? "INCOME" : "EXPENSE";
   if (inc && exp) return /(maosh|oylik|ish haqi|tushdi|зарплат|пришло|поступил)/.test(n) ? "INCOME" : "EXPENSE";

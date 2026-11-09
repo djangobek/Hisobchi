@@ -8,6 +8,9 @@ describe("o'zbek va rus sonlari", () => {
     expect(amounts("besh ming")).toEqual([5000]);
     expect(amounts("250 ming")).toEqual([250000]);
     expect(amounts("25k")).toEqual([25000]);
+    expect(amounts("1 500 000 so'm")).toEqual([1500000]);
+    expect(amounts("250,000 so'm")).toEqual([250000]);
+    expect(amounts("1.500.000 so'm")).toEqual([1500000]);
   });
   it("murakkab sonlar", () => {
     expect(amounts("yetti yuz ellik ming")).toEqual([750000]);
@@ -55,6 +58,10 @@ describe("operatsiyalarni ajratish", () => {
     expect(guessCategory("noma'lum", "EXPENSE")).toBe("Boshqa");
   });
 
+  it("fe'lsiz, lekin aniq xarajat kategoriyasi bilan aytilgan summani taniydi", () => {
+    expect(parseFinanceText("taksiga 25 ming")[0]).toMatchObject({ kind: "EXPENSE", amount: 25000, category: "Transport" });
+    expect(parseFinanceText("ovqat 40 ming")[0]).toMatchObject({ kind: "EXPENSE", amount: 40000 });
+  });
   it("karta va hisobga tushgan pulni daromad deb taniydi", () => {
     const [op] = parseFinanceText("Kartamga 450 ming tushdi");
     expect(op).toMatchObject({ kind: "INCOME", amount: 450000 });

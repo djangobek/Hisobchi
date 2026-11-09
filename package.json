@@ -1,9 +1,7 @@
-
 {
   "name": "hisobchi-finance-mini-app",
   "version": "1.0.0",
   "private": true,
-  
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,7 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "bot": "tsx bot/index.ts",
+    "bot": "node --env-file-if-exists=.env --import tsx bot/index.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts"
